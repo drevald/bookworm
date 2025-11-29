@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package com.homelibrary.api;
+
+option java_multiple_files = true;
+option java_package = "com.homelibrary.api";
+
+service BookService {
+  // Uploads a new book entry with images
+  rpc UploadBook (stream UploadBookRequest) returns (UploadBookResponse);
+}
+
+message UploadBookRequest {
+  oneof payload {
+    BookMetadata metadata = 1;
+    ImageChunk image_chunk = 2;
+  }
+}
+
+message BookMetadata {
+  // Optional: User provided ID or temporary ID
+  string client_ref_id = 1;
+}
+
+message ImageChunk {
+  ImageType type = 1;
+  bytes data = 2;
+}
+
+enum ImageType {
+  IMAGE_TYPE_UNSPECIFIED = 0;
+  COVER = 1;
+  BACK = 2;
+  INFO_PAGE = 3;
+}
+
+message UploadBookResponse {
+  string book_id = 1;
+  string title = 2;
+  repeated string authors = 3;
+  string isbn = 4;
+  int32 publication_year = 5;
+  string publisher = 6;
+  bool success = 7;
+  string error_message = 8;
+}
