@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Library - Books</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 Home Library</h1>
+            <p class="subtitle">Your Personal Book Collection</p>
+        </header>
+
+        <main>
+            <div class="books-header">
+                <h2>All Books</h2>
+                <span class="book-count" th:text="${books.size()} + ' books'">0 books</span>
+            </div>
+
+            <div th:if="${books.empty}" class="empty-state">
+                <p>No books uploaded yet. Start by capturing some book covers with the mobile app!</p>
+            </div>
+
+            <div class="books-grid" th:unless="${books.empty}">
+                <div class="book-card" th:each="book : ${books}">
+                    <a th:href="@{/books/{id}(id=${book.id})}" class="book-link">
+                        <div class="book-cover">
+                            <div th:if="${!book.images.empty}" class="thumbnail">
+                                <img th:src="@{/images/{bookId}/cover(bookId=${book.id})}" th:alt="${book.title}" />
+                            </div>
+                            <div th:if="${book.images.empty}" class="placeholder">
+                                <span>📖</span>
+                            </div>
+                        </div>
+                        <div class="book-info">
+                            <h3 class="book-title" th:text="${book.title}">Book Title</h3>
+                            <p class="book-authors" th:if="${!book.authors.empty}">
+                                <span th:text="${#strings.listJoin(book.authors.![name], ', ')}">Authors</span>
+                            </p>
+                            <div class="book-meta">
+                                <span th:if="${book.publisher != null}"
+                                    th:text="${book.publisher.name}">Publisher</span>
+                                <span th:if="${book.publicationYear != null}"
+                                    th:text="${book.publicationYear}">Year</span>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Bookworm - Home Library System</p>
+        </footer>
+    </div>
+</body>
+
+</html>

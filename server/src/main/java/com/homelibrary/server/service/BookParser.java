@@ -153,6 +153,9 @@ public class BookParser {
                 if (!line.matches("^\\d+\\s+c\\.*$") && // page count
                     !line.matches(".*\\d{4}.*страниц.*") && // page info
                     !line.matches("^[\\d\\s.]+$") && // just numbers
+                    !line.matches("^\\d{1,2}\\s+[А-ЯЁа-яё].+") && // TOC entries (1-2 digits + Cyrillic: "3 типология")
+                    !line.endsWith(", |") && // TOC entries ending with comma + pipe
+                    !line.matches("^[А-ЯЁ][а-яё]+\\s*$") && // single words (section headings)
                     !line.contains("\\\\") && // barcodes
                     !line.contains("ISBN")) { // ISBN lines
                     // Check if it's all uppercase (likely title)

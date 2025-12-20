@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${book.title} + ' - Home Library'">Book Detail - Home Library</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <style>
+        .btn-delete {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .btn-delete:hover {
+            background-color: #c82333;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            padding-top: 50px;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgb(0, 0, 0);
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+
+        .modal-content {
+            margin: auto;
+            display: block;
+            width: auto;
+            height: 90vh;
+            max-width: 90vw;
+            object-fit: contain;
+        }
+
+        .modal-content,
+        #caption {
+            animation-name: zoom;
+            animation-duration: 0.3s;
+        }
+
+        @keyframes zoom {
+            from {
+                transform: scale(0)
+            }
+
+            to {
+                transform: scale(1)
+            }
+        }
+
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #bbb;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .clickable-image {
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .clickable-image:hover {
+            opacity: 0.7;
+        }
+
+        .pager-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #999;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .pager-dot:hover {
+            background-color: #666;
+            transform: scale(1.2);
+        }
+
+        .pager-dot.active {
+            background-color: #333;
+            transform: scale(1.3);
+        }
+
+        .image-label {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .modal-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 40px;
+            color: white;
+            cursor: pointer;
+            user-select: none;
+            padding: 16px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        .modal-nav:hover {
+            background-color: rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-nav-prev {
+            left: 20px;
+        }
+
+        .modal-nav-next {
+            right: 20px;
+        }
+    </style>
+    <script th:inline="javascript">
+        const bookId = /*[[${book.id}]]*/ '';
+        const totalImages = /*[[${book.images.size()}]]*/ 0;
+        let currentIndex = 0;
+
+        function confirmDelete() {
+            return confirm("Are you sure you want to delete this book? This action cannot be undone.");
+        }
+
+        function reprocessBook() {
+            if (confirm('Reprocess OCR for this book?')) {
+                fetch(`/books/${bookId}/reprocess`, { method: 'POST' })
+                    .then(response => response.text())
+                    .then(data => {
+                        alert('OCR reprocessing started! Refresh the page in a few seconds to see results.');
+                    })
+                    .catch(error => {
+                        alert('Error: ' + error);
+                    });
+            }
+        }
+
+        function showImage(index) {
+            currentIndex = index;
+            const img = document.getElementById('bookImage');
+            const label = document.getElementById('imageLabel');
+
+            // Update thumbnail image
+            img.src = `/images/${bookId}/${index}`;
+
+            // Update image type label
+            if (label) {
+                label.textContent = getImageTypeName(index);
+            }
+
+            // Update pager dots
+            document.querySelectorAll('.pager-dot').forEach((dot, i) => {
+                if (i === index) {
+                    dot.classList.add('active');
+                } else {
+                    dot.classList.remove('active');
+                }
+            });
+        }
+
+        function getImageTypeName(index) {
+            const types = {
+                0: 'Cover',
+                1: 'Info Page',
+                2: 'Back Cover'
+            };
+            return types[index] || `Image ${index + 1}`;
+        }
+
+        function openModal(index) {
+            currentIndex = index;
+            const modal = document.getElementById("imageModal");
+            const modalImg = document.getElementById("img01");
+            const caption = document.getElementById("caption");
+
+            modal.style.display = "block";
+            // Use /full endpoint to get ORIGINAL unresized image
+            modalImg.src = `/images/${bookId}/${index}/full`;
+            caption.textContent = getImageTypeName(index);
+
+            updateModalNavigation();
+        }
+
+        function closeModal() {
+            document.getElementById("imageModal").style.display = "none";
+        }
+
+        function navigateModal(direction) {
+            currentIndex = (currentIndex + direction + totalImages) % totalImages;
+            const modalImg = document.getElementById("img01");
+            const caption = document.getElementById("caption");
+
+            modalImg.src = `/images/${bookId}/${currentIndex}/full`;
+            caption.textContent = getImageTypeName(currentIndex);
+
+            updateModalNavigation();
+        }
+
+        function updateModalNavigation() {
+            const prevBtn = document.getElementById("modalPrev");
+            const nextBtn = document.getElementById("modalNext");
+
+            if (totalImages <= 1) {
+                if (prevBtn) prevBtn.style.display = "none";
+                if (nextBtn) nextBtn.style.display = "none";
+            } else {
+                if (prevBtn) prevBtn.style.display = "block";
+                if (nextBtn) nextBtn.style.display = "block";
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const modal = document.getElementById("imageModal");
+            const bookImage = document.getElementById("bookImage");
+
+            // Click on thumbnail to open modal
+            if (bookImage) {
+                bookImage.onclick = function() {
+                    openModal(currentIndex);
+                };
+            }
+
+            // Close button
+            const closeBtn = document.querySelector(".close");
+            if (closeBtn) {
+                closeBtn.onclick = closeModal;
+            }
+
+            // Close on outside click
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            };
+
+            // Keyboard navigation
+            document.addEventListener('keydown', function(e) {
+                if (modal.style.display === "block") {
+                    if (e.key === "ArrowLeft") navigateModal(-1);
+                    if (e.key === "ArrowRight") navigateModal(1);
+                    if (e.key === "Escape") closeModal();
+                }
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div class="container" style="padding: 60px;">
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+            <h1 th:text="${book.title ?: 'Book Title'}" style="margin: 0; font-size: 2.5em;">Book Title</h1>
+            <a th:href="@{/}" style="background-color: #999; color: white; border: none; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px;">BACK</a>
+        </header>
+
+        <main style="display: flex; gap: 40px; margin-bottom: 40px;">
+            <div style="flex-shrink: 0;">
+                <div th:if="${!book.images.empty}">
+                    <img id="bookImage" th:src="@{/images/{bookId}/0(bookId=${book.id})}" th:alt="${book.title}"
+                        class="clickable-image"
+                        style="width: 300px; height: auto; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
+                        title="Click to enlarge" />
+                    <div id="imageLabel" class="image-label">Cover</div>
+                </div>
+                <div th:if="${book.images.empty}" style="width: 300px; height: 400px; background-color: #f0f0f0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; border-radius: 4px;">
+                    <span style="font-size: 4em;">📖</span>
+                </div>
+
+                <!-- Image Pagination Dots -->
+                <div th:if="${book.images.size() > 1}" id="imagePager" style="display: flex; gap: 12px; margin-top: 15px; justify-content: center; align-items: center;">
+                    <div th:each="i : ${#numbers.sequence(0, book.images.size() - 1)}"
+                         th:onclick="|showImage(${i})|"
+                         th:class="${i == 0} ? 'pager-dot active' : 'pager-dot'"
+                         th:title="${i == 0 ? 'Cover' : (i == 1 ? 'Info Page' : 'Back Cover')}">
+                    </div>
+                </div>
+            </div>
+
+            <div style="flex: 1; line-height: 2;">
+                <div style="margin-bottom: 15px;">
+                    <strong>Title:</strong> <span th:text="${book.title ?: 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Authors:</strong> <span th:text="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>ISBN:</strong> <span th:text="${book.isbn ?: 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Publisher:</strong> <span th:text="${book.publisher != null ? book.publisher.name : 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Publication Year:</strong> <span th:text="${book.publicationYear ?: 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Added to Library:</strong> <span th:text="${book.createdAt != null ? #temporals.format(book.createdAt, 'MMM dd, yyyy HH:mm') : 'Not available'}">Not available</span>
+                </div>
+            </div>
+        </main>
+
+        <div style="display: flex; gap: 15px;">
+            <form th:action="@{/books/{id}(id=${book.id})}" th:method="delete" style="display: inline;" onsubmit="return confirmDelete()">
+                <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">DELETE</button>
+            </form>
+            <button onclick="reprocessBook()" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REGEN</button>
+        </div>
+
+        <!-- The Modal -->
+        <div id="imageModal" class="modal">
+            <span class="close" title="Close (Esc)">&times;</span>
+
+            <!-- Navigation arrows -->
+            <span id="modalPrev" class="modal-nav modal-nav-prev" onclick="navigateModal(-1)" title="Previous (←)">&#10094;</span>
+            <span id="modalNext" class="modal-nav modal-nav-next" onclick="navigateModal(1)" title="Next (→)">&#10095;</span>
+
+            <!-- Large image -->
+            <img class="modal-content" id="img01" style="cursor: zoom-out;" onclick="closeModal()">
+
+            <!-- Caption -->
+            <div id="caption" style="margin: auto; display: block; width: 80%; max-width: 700px; text-align: center; color: #ccc; padding: 20px 0; font-size: 18px;">
+            </div>
+        </div>
+
+        <footer>
+            <p>Bookworm - Home Library System</p>
+        </footer>
+    </div>
+</body>
+
+</html>

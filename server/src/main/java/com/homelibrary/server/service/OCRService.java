@@ -23,12 +23,13 @@ public class OCRService {
         log.info("=== OCR EXTRACTION START ===");
         log.info("Language parameter: '{}'", language);
 
-        // Skip enhancement - use original image for better results
-        // Enhancement was causing text degradation
+        // Enhance image for better OCR results
+        byte[] enhancedImageBytes = imageProcessingService.enhanceForOCR(imageBytes);
+        log.info("Image enhanced for OCR");
 
         // Use ImageIO to read the image from bytes.
         // This leverages the installed JAI Image I/O plugins for support.
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(imageBytes)) {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(enhancedImageBytes)) {
             BufferedImage bufferedImage = ImageIO.read(bis);
 
             if (bufferedImage == null) {
@@ -64,16 +65,32 @@ public class OCRService {
             // - Linux: /usr/share/tesseract-ocr/4.00/tessdata or /usr/share/tessdata
             // - Or in the project: ./tessdata
 
-            // Set language (default to rus+eng if not provided or empty)
+            // Set language (default to rus if not provided or empty)
             if (language == null || language.trim().isEmpty()) {
-                language = "rus+eng";
+                language = "rus";
             }
             log.info("Setting Tesseract language to: '{}'", language);
             tesseract.setLanguage(language);
 
+            // Configure Tesseract for better accuracy
+            // PSM 3 = Fully automatic page segmentation (no OSD)
+            tesseract.setPageSegMode(3);
+            // OEM 1 = LSTM neural network mode (best accuracy for modern Tesseract)
+            tesseract.setOcrEngineMode(1);
+
+            log.info("Tesseract configured: PSM=3 (auto), OEM=1 (LSTM)");
             log.info("Starting OCR...");
             String result = tesseract.doOCR(bufferedImage);
             log.info("OCR completed successfully, extracted {} characters", result.length());
+
+            // Log the extracted text (truncate if too long)
+            if (result.length() <= 500) {
+                log.info("OCR extracted text:\n{}", result);
+            } else {
+                log.info("OCR extracted text (first 500 chars):\n{}", result.substring(0, 500));
+                log.info("... (truncated, total length: {} chars)", result.length());
+            }
+
             log.info("=== OCR EXTRACTION END ===");
             return result;
         } catch (Exception e) {
@@ -84,7 +101,7 @@ public class OCRService {
 
     // Overload for backward compatibility / tests
     public String extractText(byte[] imageBytes) throws IOException, TesseractException {
-        return extractText(imageBytes, "rus+eng");
+        return extractText(imageBytes, "rus");
     }
 
     protected Tesseract getTesseractInstance() {
