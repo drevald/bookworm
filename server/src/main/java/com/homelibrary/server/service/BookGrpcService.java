@@ -25,11 +25,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
 
-    private final OCRService ocrService;
-    private final BookParser bookParser;
     private final BookRepository bookRepository;
-    private final AuthorRepository authorRepository;
-    private final PublisherRepository publisherRepository;
+    private final BookProcessingService bookProcessingService;
 
     @Override
     public StreamObserver<UploadBookRequest> uploadBook(StreamObserver<UploadBookResponse> responseObserver) {
@@ -61,19 +58,21 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
             @Override
             public void onCompleted() {
                 try {
-                    Book savedBook = processAndSaveBook(imageBuffers);
-                    
+                    // 1. Save Book and Images immediately (Synchronous)
+                    Book savedBook = saveBookInitial(imageBuffers);
+
+                    // 2. Trigger Async Processing (OCR & Parsing)
+                    String language = (metadata != null) ? metadata.getLanguage() : null;
+                    bookProcessingService.processBookAsync(savedBook.getId(), language);
+
+                    // 3. Return immediate response
                     UploadBookResponse.Builder response = UploadBookResponse.newBuilder()
                             .setSuccess(true)
                             .setBookId(savedBook.getId().toString())
-                            .setTitle(savedBook.getTitle() != null ? savedBook.getTitle() : "")
-                            .setIsbn(savedBook.getIsbn() != null ? savedBook.getIsbn() : "")
-                            .setPublicationYear(savedBook.getPublicationYear() != null ? savedBook.getPublicationYear() : 0);
-                            
-                    if (savedBook.getPublisher() != null) {
-                        response.setPublisher(savedBook.getPublisher().getName());
-                    }
-                    
+                            .setTitle("") // Title will be populated later
+                            .setIsbn("")
+                            .setPublicationYear(0);
+
                     responseObserver.onNext(response.build());
                     responseObserver.onCompleted();
                 } catch (Exception e) {
@@ -89,49 +88,25 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
     }
 
     @Transactional
-    protected Book processAndSaveBook(Map<ImageType, ByteArrayOutputStream> imageBuffers) throws Exception {
+    protected Book saveBookInitial(Map<ImageType, ByteArrayOutputStream> imageBuffers) {
         Book book = new Book();
-        
-        // 1. Save Images and Perform OCR
-        String coverText = "";
-        String backText = "";
-        String infoText = "";
 
         for (Map.Entry<ImageType, ByteArrayOutputStream> entry : imageBuffers.entrySet()) {
             byte[] data = entry.getValue().toByteArray();
             ImageType type = entry.getKey();
-            
+
+            // Log image size when received and before storing
+            log.info("[IMAGE_SIZE] Server received - Type: {}, Size: {} bytes", type, data.length);
+            log.info("[IMAGE_SIZE] Before storing in DB - Type: {}, Size: {} bytes", type, data.length);
+
             // Save Image Entity
             Image image = new Image();
             image.setBook(book);
             image.setData(data);
             image.setType(Image.ImageType.valueOf(type.name())); // Map proto enum to domain enum
             book.getImages().add(image);
-
-            // OCR
-            String text = ocrService.extractText(data);
-            if (type == ImageType.COVER) coverText = text;
-            else if (type == ImageType.BACK) backText = text;
-            else if (type == ImageType.INFO_PAGE) infoText = text;
         }
 
-        // 2. Parse Metadata
-        BookParser.ParsedBookData parsedData = bookParser.parse(coverText, backText, infoText);
-        
-        book.setTitle(parsedData.getTitle());
-        book.setIsbn(parsedData.getIsbn());
-        book.setPublicationYear(parsedData.getPublicationYear());
-
-        // 3. Handle Publisher
-        if (parsedData.getPublisher() != null) {
-            String pubName = parsedData.getPublisher();
-            Publisher publisher = publisherRepository.findByName(pubName)
-                    .orElseGet(() -> new Publisher(pubName));
-            book.setPublisher(publisher);
-        }
-
-        // 4. Handle Authors (TODO: Parse authors)
-        
         return bookRepository.save(book);
     }
 }

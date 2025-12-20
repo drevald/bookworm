@@ -20,6 +20,7 @@ message UploadBookRequest {
 message BookMetadata {
   // Optional: User provided ID or temporary ID
   string client_ref_id = 1;
+  string language = 2; // e.g. "rus", "eng", "rus+eng"
 }
 
 message ImageChunk {
