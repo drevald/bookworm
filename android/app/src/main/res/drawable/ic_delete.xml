@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Red circle with trash icon -->
+    <path
+        android:fillColor="#F44336"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M15,9H9v7c0,0.55 0.45,1 1,1h4c0.55,0 1,-0.45 1,-1V9zM15.5,7l-0.71,-0.71C14.61,6.11 14.36,6 14.09,6H9.91c-0.27,0 -0.52,0.11 -0.71,0.29L8.5,7H6v1h12V7h-2.5z"/>
+</vector>

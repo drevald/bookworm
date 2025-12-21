@@ -26,6 +26,15 @@ public class Book {
     private String isbn;
     private Integer publicationYear;
 
+    @Column(length = 100)
+    private String udk;
+
+    @Column(length = 100)
+    private String bbk;
+
+    @Column(length = 2000)
+    private String annotation;
+
     @ManyToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "publisher_id")
     private Publisher publisher;

@@ -12,16 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  llm-service:
-    build: ../llm-service
-    ports:
-      - "5000:5000"
-    environment:
-      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   app:
     build: .
     ports:
@@ -29,13 +19,14 @@ services:
       - "4040:8080" # Web UI port
     depends_on:
       - db
-      - llm-service
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/bookworm
       SPRING_DATASOURCE_USERNAME: bookworm
       SPRING_DATASOURCE_PASSWORD: bookworm
-      LLM_SERVICE_URL: http://llm-service:5000
-      LLM_SERVICE_ENABLED: "true"
+      # Java server calls Ollama directly
+      BOOKWORM_OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      BOOKWORM_OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      BOOKWORM_LLM_SERVICE_ENABLED: "true"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

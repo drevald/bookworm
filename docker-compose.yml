@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16
+    container_name: bookworm-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-bookworm}
+      POSTGRES_USER: ${DB_USERNAME:-bookworm}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bookworm}
+    ports:
+      - "${DB_PORT:-5437}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bookworm-network
+
+  # Python OCR + Metadata Service (proven to work - from ocr.py)
+  ocr-service:
+    build: ./llm-service
+    container_name: bookworm-ocr-service
+    ports:
+      - "${OCR_SERVICE_PORT:-5000}:5000"
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://192.168.0.134:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      SERVICE_PORT: 5000
+    networks:
+      - bookworm-network
+
+  # Java Server (gRPC + Web UI)
+  server:
+    build: ./server
+    container_name: bookworm-server
+    ports:
+      - "${GRPC_PORT:-9090}:9090"      # gRPC port
+      - "${WEB_UI_PORT:-4040}:8080"    # Web UI port
+    depends_on:
+      - db
+      - ocr-service
+    environment:
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:${DB_PORT:-5432}/${DB_NAME:-bookworm}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-bookworm}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-bookworm}
+      # Python OCR Service
+      OCR_SERVICE_URL: http://ocr-service:5000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bookworm-network
+
+volumes:
+  postgres_data:
+
+networks:
+  bookworm-network:
+    driver: bridge

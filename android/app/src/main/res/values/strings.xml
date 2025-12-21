@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bookworm</string>
+    <string name="main_title">Home Library</string>
+    <string name="capture_button">Capture Book</string>
+    <string name="review_button">Review &amp; Upload</string>
+</resources>

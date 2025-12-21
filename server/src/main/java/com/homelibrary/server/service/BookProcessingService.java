@@ -20,13 +20,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BookProcessingService {
 
-    private final OCRService ocrService;
-    private final BookParser bookParser;
-    private final LLMMetadataExtractor llmMetadataExtractor;
+    private final PythonOCRService pythonOCRService;
     private final BookRepository bookRepository;
     private final PublisherRepository publisherRepository;
     private final AuthorRepository authorRepository;
-    private final ImageProcessingService imageProcessingService;
 
     @Async
     @Transactional
@@ -36,47 +33,37 @@ public class BookProcessingService {
             Book book = bookRepository.findById(bookId)
                     .orElseThrow(() -> new RuntimeException("Book not found: " + bookId));
 
-            String coverText = "";
-            String backText = "";
-            String infoText = "";
+            byte[] coverImage = null;
+            byte[] backImage = null;
+            byte[] infoImage = null;
 
-            // Perform OCR on all images
+            // Collect images by type
             for (Image image : book.getImages()) {
-                try {
-                    // Log image size after retrieving from DB
-                    log.info("[IMAGE_SIZE] After retrieving from DB - Type: {}, Size: {} bytes", image.getType(), image.getData().length);
-
-                    // Cropping disabled - processing original image
-
-                    String text = ocrService.extractText(image.getData(), language);
-                    log.info("OCR extracted from {} for book {}: \n{}", image.getType(), bookId, text);
-                    switch (image.getType()) {
-                        case COVER:
-                            coverText = text;
-                            break;
-                        case BACK:
-                            backText = text;
-                            break;
-                        case INFO_PAGE:
-                            infoText = text;
-                            break;
-                    }
-                } catch (Exception e) {
-                    log.error("OCR failed for image type {} on book {}", image.getType(), bookId, e);
+                switch (image.getType()) {
+                    case COVER:
+                        coverImage = image.getData();
+                        break;
+                    case BACK:
+                        backImage = image.getData();
+                        break;
+                    case INFO_PAGE:
+                        infoImage = image.getData();
+                        break;
                 }
             }
 
-            // Parse Metadata
-            // Try LLM extraction first (more intelligent, handles OCR errors)
-            BookParser.ParsedBookData parsedData = llmMetadataExtractor.extractMetadata(coverText, backText, infoText);
+            // Call Python OCR service (does OCR + regex + LLM in one call)
+            log.info("Calling Python OCR service for book {}", bookId);
+            PythonOCRService.ParsedBookData parsedData = pythonOCRService.extractMetadata(
+                    coverImage, infoImage, backImage, language);
 
-            // Fallback to regex parsing if LLM fails
             if (parsedData == null) {
-                log.info("LLM extraction failed or disabled, falling back to regex parsing");
-                parsedData = bookParser.parse(coverText, backText, infoText);
-            } else {
-                log.info("Successfully extracted metadata via LLM");
+                log.error("Python OCR service failed for book {}", bookId);
+                return;
             }
+
+            log.info("Python OCR service returned metadata for book {}: title={}, author={}, isbn={}",
+                    bookId, parsedData.getTitle(), parsedData.getAuthor(), parsedData.getIsbn());
 
             // Update Book
             if (parsedData.getTitle() != null && !parsedData.getTitle().isEmpty()) {
@@ -87,6 +74,15 @@ public class BookProcessingService {
             }
             if (parsedData.getPublicationYear() != null) {
                 book.setPublicationYear(parsedData.getPublicationYear());
+            }
+            if (parsedData.getUdk() != null && !parsedData.getUdk().isEmpty() && !parsedData.getUdk().equals("unknown")) {
+                book.setUdk(parsedData.getUdk());
+            }
+            if (parsedData.getBbk() != null && !parsedData.getBbk().isEmpty() && !parsedData.getBbk().equals("unknown")) {
+                book.setBbk(parsedData.getBbk());
+            }
+            if (parsedData.getAnnotation() != null && !parsedData.getAnnotation().isEmpty() && !parsedData.getAnnotation().equals("unknown")) {
+                book.setAnnotation(parsedData.getAnnotation());
             }
 
             // Handle Publisher

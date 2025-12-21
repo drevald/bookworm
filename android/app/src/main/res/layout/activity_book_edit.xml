@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F5F5"
+    tools:context=".BookEditActivity">
+
+    <!-- Pages List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/pagesRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:clipToPadding="false"
+        android:padding="16dp"
+        app:layout_constraintBottom_toTopOf="@+id/bottomActionBar"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:listitem="@layout/item_page" />
+
+    <!-- Delete Book Button -->
+    <ImageButton
+        android:id="@+id/deleteBookButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="16dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Delete book"
+        android:src="@drawable/ic_delete"
+        app:tint="#D32F2F"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Bottom Action Bar -->
+    <LinearLayout
+        android:id="@+id/bottomActionBar"
+        android:layout_width="match_parent"
+        android:layout_height="72dp"
+        android:background="@android:color/white"
+        android:elevation="8dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <!-- Back Button -->
+        <ImageButton
+            android:id="@+id/backButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Go back"
+            android:src="@drawable/ic_back" />
+
+        <!-- Add Cover Button -->
+        <ImageButton
+            android:id="@+id/addCoverButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Add cover"
+            android:src="@drawable/ic_add_cover" />
+
+        <!-- Add Info Page Button -->
+        <ImageButton
+            android:id="@+id/addInfoButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Add info page"
+            android:src="@drawable/ic_add_info" />
+
+        <!-- Add Other Page Button -->
+        <ImageButton
+            android:id="@+id/addPageButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Add page"
+            android:src="@drawable/ic_add_page" />
+
+        <!-- Send Button -->
+        <ImageButton
+            android:id="@+id/sendButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Send book"
+            android:src="@drawable/ic_send" />
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

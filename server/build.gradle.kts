@@ -69,10 +69,30 @@ protobuf {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    testLogging {
+        showStandardStreams = true
+        events("passed", "skipped", "failed")
+    }
 }
 
 // Configure bootRun to pass environment variables
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
     // Pass all environment variables from the parent process
     environment(System.getenv())
+}
+
+// Task to run manual metadata extraction test
+tasks.register<JavaExec>("testMetadataExtraction") {
+    group = "verification"
+    description = "Run manual LLM metadata extraction test"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.homelibrary.server.service.LLMMetadataExtractorManualTest")
+}
+
+// Task to run OCR test with visible output
+tasks.register<JavaExec>("runOCRTest") {
+    group = "verification"
+    description = "Run OCR test with console output"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.homelibrary.server.service.OCRTestMain")
 }

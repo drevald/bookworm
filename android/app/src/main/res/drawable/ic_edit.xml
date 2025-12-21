@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Orange circle with pencil/edit icon -->
+    <path
+        android:fillColor="#FF9800"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14.06,9.02l0.92,0.92L8.92,16H8v-0.92l6.06,-6.06M16.66,7c-0.19,0 -0.38,0.07 -0.52,0.21l-1.13,1.13 2.09,2.09 1.13,-1.13c0.29,-0.29 0.29,-0.76 0,-1.04l-1.04,-1.04c-0.14,-0.15 -0.34,-0.22 -0.53,-0.22zM14.06,9.02L7,16.08V18h1.92l7.06,-7.06 -1.92,-1.92z"/>
+</vector>

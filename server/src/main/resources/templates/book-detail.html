@@ -144,6 +144,7 @@
     <script th:inline="javascript">
         const bookId = /*[[${book.id}]]*/ '';
         const totalImages = /*[[${book.images.size()}]]*/ 0;
+        const imageTypes = /*[[${book.images.![type.toString()]}]]*/ [];
         let currentIndex = 0;
 
         function confirmDelete() {
@@ -187,12 +188,30 @@
         }
 
         function getImageTypeName(index) {
-            const types = {
-                0: 'Cover',
-                1: 'Info Page',
-                2: 'Back Cover'
-            };
-            return types[index] || `Image ${index + 1}`;
+            if (index >= imageTypes.length) {
+                return `Image ${index + 1}`;
+            }
+
+            const type = imageTypes[index];
+
+            // Count how many images of this type we've seen before this index
+            let typeCount = 0;
+            for (let i = 0; i < index; i++) {
+                if (imageTypes[i] === type) {
+                    typeCount++;
+                }
+            }
+
+            switch(type) {
+                case 'COVER':
+                    return 'Cover';
+                case 'BACK':
+                    return 'Back Cover';
+                case 'INFO_PAGE':
+                    return typeCount > 0 ? `Info Page ${typeCount + 1}` : 'Info Page';
+                default:
+                    return `Image ${index + 1}`;
+            }
         }
 
         function openModal(index) {
@@ -297,10 +316,18 @@
                 <div th:if="${book.images.size() > 1}" id="imagePager" style="display: flex; gap: 12px; margin-top: 15px; justify-content: center; align-items: center;">
                     <div th:each="i : ${#numbers.sequence(0, book.images.size() - 1)}"
                          th:onclick="|showImage(${i})|"
-                         th:class="${i == 0} ? 'pager-dot active' : 'pager-dot'"
-                         th:title="${i == 0 ? 'Cover' : (i == 1 ? 'Info Page' : 'Back Cover')}">
+                         th:class="${i == 0} ? 'pager-dot active' : 'pager-dot'">
                     </div>
                 </div>
+                <script th:inline="javascript">
+                    // Set tooltips for pager dots dynamically
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const dots = document.querySelectorAll('.pager-dot');
+                        dots.forEach((dot, index) => {
+                            dot.title = getImageTypeName(index);
+                        });
+                    });
+                </script>
             </div>
 
             <div style="flex: 1; line-height: 2;">
@@ -320,13 +347,25 @@
                     <strong>Publication Year:</strong> <span th:text="${book.publicationYear ?: 'Not available'}">Not available</span>
                 </div>
                 <div style="margin-bottom: 15px;">
+                    <strong>UDK:</strong> <span th:text="${book.udk ?: 'Not available'}">Not available</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>BBK:</strong> <span th:text="${book.bbk ?: 'Not available'}">Not available</span>
+                </div>
+                <div th:if="${book.annotation != null and !#strings.isEmpty(book.annotation)}" style="margin-bottom: 15px;">
+                    <strong>Annotation:</strong>
+                    <div style="margin-top: 8px; padding: 12px; background-color: #f8f9fa; border-left: 3px solid #007bff; border-radius: 4px; line-height: 1.6;">
+                        <span th:text="${book.annotation}">Not available</span>
+                    </div>
+                </div>
+                <div style="margin-bottom: 15px;">
                     <strong>Added to Library:</strong> <span th:text="${book.createdAt != null ? #temporals.format(book.createdAt, 'MMM dd, yyyy HH:mm') : 'Not available'}">Not available</span>
                 </div>
             </div>
         </main>
 
         <div style="display: flex; gap: 15px;">
-            <form th:action="@{/books/{id}(id=${book.id})}" th:method="delete" style="display: inline;" onsubmit="return confirmDelete()">
+            <form th:action="@{/books/{id}/delete(id=${book.id})}" method="post" style="display: inline;" onsubmit="return confirmDelete()">
                 <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">DELETE</button>
             </form>
             <button onclick="reprocessBook()" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REGEN</button>

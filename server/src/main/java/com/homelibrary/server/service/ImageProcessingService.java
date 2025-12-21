@@ -88,59 +88,6 @@ public class ImageProcessingService {
         }
     }
 
-    /**
-     * Enhance image for better OCR accuracy
-     */
-    public byte[] enhanceForOCR(byte[] imageBytes) {
-        if (!openCVLoaded || imageBytes == null || imageBytes.length == 0) {
-            return imageBytes;
-        }
-
-        try {
-            Mat src = Imgcodecs.imdecode(new MatOfByte(imageBytes), Imgcodecs.IMREAD_COLOR);
-            if (src.empty()) {
-                return imageBytes;
-            }
-
-            // Convert to grayscale
-            Mat gray = new Mat();
-            Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
-
-            // Upscale significantly for better OCR (3x for small images)
-            if (gray.width() < 1500 || gray.height() < 1500) {
-                Mat upscaled = new Mat();
-                double scaleFactor = 3.0;
-                Imgproc.resize(gray, upscaled, new Size(gray.width() * scaleFactor, gray.height() * scaleFactor),
-                    0, 0, Imgproc.INTER_CUBIC);
-                log.info("Upscaled image for OCR: {}x{} -> {}x{}",
-                    gray.width(), gray.height(), upscaled.width(), upscaled.height());
-                gray.release();
-                gray = upscaled;
-            }
-
-            // Enhance contrast using histogram equalization
-            Mat enhanced = new Mat();
-            Imgproc.equalizeHist(gray, enhanced);
-
-            // Encode back to PNG with high quality
-            MatOfByte mob = new MatOfByte();
-            Imgcodecs.imencode(".png", enhanced, mob);
-            byte[] result = mob.toArray();
-
-            log.info("Enhanced image for OCR: grayscale + 3x upscale + histogram equalization");
-
-            // Cleanup
-            src.release();
-            gray.release();
-            enhanced.release();
-
-            return result;
-        } catch (Exception e) {
-            log.error("Error enhancing image for OCR", e);
-            return imageBytes;
-        }
-    }
-
     public byte[] detectAndCrop(byte[] originalImage) {
         if (!openCVLoaded || originalImage == null || originalImage.length == 0) {
             return originalImage;

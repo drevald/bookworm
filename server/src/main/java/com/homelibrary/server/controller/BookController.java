@@ -209,9 +209,11 @@ public class BookController {
         return ResponseEntity.ok("Re-processing started for book: " + id);
     }
 
-    @DeleteMapping("/books/{id}")
+    @PostMapping("/books/{id}/delete")
     public String deleteBook(@PathVariable UUID id) {
+        log.info("Deleting book with ID: {}", id);
         bookRepository.deleteById(id);
+        log.info("Book deleted successfully, redirecting to books list");
         return "redirect:/";
     }
 }
