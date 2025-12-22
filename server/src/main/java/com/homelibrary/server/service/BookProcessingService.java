@@ -13,6 +13,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -35,7 +37,7 @@ public class BookProcessingService {
 
             byte[] coverImage = null;
             byte[] backImage = null;
-            byte[] infoImage = null;
+            List<byte[]> infoImages = new ArrayList<>();
 
             // Collect images by type
             for (Image image : book.getImages()) {
@@ -47,15 +49,18 @@ public class BookProcessingService {
                         backImage = image.getData();
                         break;
                     case INFO_PAGE:
-                        infoImage = image.getData();
+                        infoImages.add(image.getData());
                         break;
                 }
             }
 
+            log.info("Collected images for book {}: cover={}, info_pages={}, back={}",
+                    bookId, coverImage != null, infoImages.size(), backImage != null);
+
             // Call Python OCR service (does OCR + regex + LLM in one call)
             log.info("Calling Python OCR service for book {}", bookId);
             PythonOCRService.ParsedBookData parsedData = pythonOCRService.extractMetadata(
-                    coverImage, infoImage, backImage, language);
+                    coverImage, infoImages, backImage, language);
 
             if (parsedData == null) {
                 log.error("Python OCR service failed for book {}", bookId);

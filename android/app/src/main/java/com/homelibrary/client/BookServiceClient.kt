@@ -47,10 +47,10 @@ class BookServiceClient(private val host: String, private val port: Int) {
     fun uploadBook(
         context: Context,
         coverUri: Uri,
-        infoUri: Uri,
+        infoUris: List<Uri>,
         language: String = "rus"
     ): Flow<UploadResult> = callbackFlow {
-        
+
         val responseObserver = object : StreamObserver<UploadBookResponse> {
             override fun onNext(value: UploadBookResponse) {
                 if (value.success) {
@@ -84,8 +84,16 @@ class BookServiceClient(private val host: String, private val port: Int) {
             )
 
             // 2. Send Images
+            Log.d(TAG, "Sending cover and ${infoUris.size} info page(s)")
+
+            // Send all info pages first
+            infoUris.forEachIndexed { index, infoUri ->
+                Log.d(TAG, "Sending info page ${index + 1}/${infoUris.size}")
+                sendImage(context, infoUri, ImageType.INFO_PAGE, requestObserver)
+            }
+
+            // Send cover
             sendImage(context, coverUri, ImageType.COVER, requestObserver)
-            sendImage(context, infoUri, ImageType.INFO_PAGE, requestObserver)
 
             requestObserver.onCompleted()
 
@@ -95,7 +103,7 @@ class BookServiceClient(private val host: String, private val port: Int) {
             close()
         }
 
-        awaitClose { 
+        awaitClose {
             // Cleanup if needed
         }
     }

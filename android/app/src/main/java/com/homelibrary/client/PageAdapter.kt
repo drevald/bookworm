@@ -31,10 +31,20 @@ class PageAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(page: PageEntity) {
-            // Set page type label
+            // Set page type label with numbering for info pages
             binding.pageTypeLabel.text = when (page.type) {
                 PageType.COVER -> "COVER"
-                PageType.INFO_PAGE -> "INFO PAGE"
+                PageType.INFO_PAGE -> {
+                    // Count which info page this is
+                    val infoPageNumber = currentList
+                        .filter { it.type == PageType.INFO_PAGE }
+                        .indexOfFirst { it.id == page.id } + 1
+                    if (infoPageNumber > 1 || currentList.count { it.type == PageType.INFO_PAGE } > 1) {
+                        "INFO PAGE $infoPageNumber"
+                    } else {
+                        "INFO PAGE"
+                    }
+                }
                 PageType.OTHER -> "PAGE"
             }
 

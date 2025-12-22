@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @GrpcService
@@ -31,8 +33,10 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
     @Override
     public StreamObserver<UploadBookRequest> uploadBook(StreamObserver<UploadBookResponse> responseObserver) {
         return new StreamObserver<>() {
-            private final Map<ImageType, ByteArrayOutputStream> imageBuffers = new HashMap<>();
+            private final Map<ImageType, List<ByteArrayOutputStream>> imageBuffers = new HashMap<>();
             private BookMetadata metadata;
+            private ImageType previousChunkType = null;
+            private ByteArrayOutputStream currentStream = null;
 
             @Override
             public void onNext(UploadBookRequest request) {
@@ -40,9 +44,18 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
                     this.metadata = request.getMetadata();
                 } else if (request.hasImageChunk()) {
                     ImageChunk chunk = request.getImageChunk();
-                    imageBuffers.computeIfAbsent(chunk.getType(), k -> new ByteArrayOutputStream());
+
+                    // Detect new image: type changed from previous chunk OR first chunk
+                    if (previousChunkType != chunk.getType() || currentStream == null) {
+                        currentStream = new ByteArrayOutputStream();
+                        imageBuffers.computeIfAbsent(chunk.getType(), k -> new ArrayList<>()).add(currentStream);
+                        log.info("[IMAGE_UPLOAD] Starting new image - Type: {}, Total images of this type: {}",
+                                chunk.getType(), imageBuffers.get(chunk.getType()).size());
+                    }
+
                     try {
-                        chunk.getData().writeTo(imageBuffers.get(chunk.getType()));
+                        chunk.getData().writeTo(currentStream);
+                        previousChunkType = chunk.getType();
                     } catch (IOException e) {
                         log.error("Error writing image chunk", e);
                         onError(e);
@@ -88,25 +101,30 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
     }
 
     @Transactional
-    protected Book saveBookInitial(Map<ImageType, ByteArrayOutputStream> imageBuffers) {
+    protected Book saveBookInitial(Map<ImageType, List<ByteArrayOutputStream>> imageBuffers) {
         Book book = new Book();
 
-        for (Map.Entry<ImageType, ByteArrayOutputStream> entry : imageBuffers.entrySet()) {
-            byte[] data = entry.getValue().toByteArray();
+        for (Map.Entry<ImageType, List<ByteArrayOutputStream>> entry : imageBuffers.entrySet()) {
             ImageType type = entry.getKey();
+            List<ByteArrayOutputStream> streams = entry.getValue();
 
-            // Log image size when received and before storing
-            log.info("[IMAGE_SIZE] Server received - Type: {}, Size: {} bytes", type, data.length);
-            log.info("[IMAGE_SIZE] Before storing in DB - Type: {}, Size: {} bytes", type, data.length);
+            for (int i = 0; i < streams.size(); i++) {
+                byte[] data = streams.get(i).toByteArray();
 
-            // Save Image Entity
-            Image image = new Image();
-            image.setBook(book);
-            image.setData(data);
-            image.setType(Image.ImageType.valueOf(type.name())); // Map proto enum to domain enum
-            book.getImages().add(image);
+                // Log image size when received and before storing
+                log.info("[IMAGE_SIZE] Server received - Type: {}, Index: {}, Size: {} bytes", type, i, data.length);
+                log.info("[IMAGE_SIZE] Before storing in DB - Type: {}, Index: {}, Size: {} bytes", type, i, data.length);
+
+                // Save Image Entity
+                Image image = new Image();
+                image.setBook(book);
+                image.setData(data);
+                image.setType(Image.ImageType.valueOf(type.name())); // Map proto enum to domain enum
+                book.getImages().add(image);
+            }
         }
 
+        log.info("[IMAGE_SAVE] Saved book with {} total images", book.getImages().size());
         return bookRepository.save(book);
     }
 }

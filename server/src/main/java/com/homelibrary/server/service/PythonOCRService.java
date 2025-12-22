@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
@@ -36,8 +37,8 @@ public class PythonOCRService {
         @JsonProperty("cover_image")
         private String coverImage;
 
-        @JsonProperty("info_image")
-        private String infoImage;
+        @JsonProperty("info_images")
+        private List<String> infoImages;
 
         @JsonProperty("back_image")
         private String backImage;
@@ -78,7 +79,7 @@ public class PythonOCRService {
     /**
      * Extract metadata from book images using Python OCR service
      */
-    public ParsedBookData extractMetadata(byte[] coverImage, byte[] infoImage, byte[] backImage, String language) {
+    public ParsedBookData extractMetadata(byte[] coverImage, List<byte[]> infoImages, byte[] backImage, String language) {
         try {
             log.info("Calling Python OCR service at: {}", ocrServiceUrl);
 
@@ -88,9 +89,18 @@ public class PythonOCRService {
             if (coverImage != null && coverImage.length > 0) {
                 request.setCoverImage(Base64.getEncoder().encodeToString(coverImage));
             }
-            if (infoImage != null && infoImage.length > 0) {
-                request.setInfoImage(Base64.getEncoder().encodeToString(infoImage));
+
+            if (infoImages != null && !infoImages.isEmpty()) {
+                List<String> encodedInfoImages = new ArrayList<>();
+                for (byte[] infoImage : infoImages) {
+                    if (infoImage != null && infoImage.length > 0) {
+                        encodedInfoImages.add(Base64.getEncoder().encodeToString(infoImage));
+                    }
+                }
+                request.setInfoImages(encodedInfoImages);
+                log.info("Sending {} info page images to OCR service", encodedInfoImages.size());
             }
+
             if (backImage != null && backImage.length > 0) {
                 request.setBackImage(Base64.getEncoder().encodeToString(backImage));
             }

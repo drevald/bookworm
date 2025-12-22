@@ -51,16 +51,20 @@ class UploadManager(
                 // Get cover and info page URIs
                 val pages = bookWithPages.pages
                 val coverPage = pages.find { it.type == PageType.COVER }
-                val infoPage = pages.find { it.type == PageType.INFO_PAGE }
+                val infoPages = pages.filter { it.type == PageType.INFO_PAGE }
 
-                if (coverPage != null && infoPage != null) {
+                if (coverPage != null && infoPages.isNotEmpty()) {
                     val coverUri = Uri.fromFile(File(coverPage.imagePath))
-                    val infoUri = Uri.fromFile(File(infoPage.imagePath))
-                    Log.d(TAG, "Uploading book $bookId: cover=${coverPage.imagePath}, info=${infoPage.imagePath}")
+                    val infoUris = infoPages.map { Uri.fromFile(File(it.imagePath)) }
+
+                    Log.d(TAG, "Uploading book $bookId: cover=${coverPage.imagePath}, info_pages=${infoPages.size}")
+                    infoPages.forEachIndexed { index, page ->
+                        Log.d(TAG, "  Info page ${index + 1}: ${page.imagePath}")
+                    }
 
                     val language = AppSettings.getOcrLanguage(context)
                     // Pass language to uploadBook
-                    bookServiceClient.uploadBook(context, coverUri, infoUri, language).collect { result ->
+                    bookServiceClient.uploadBook(context, coverUri, infoUris, language).collect { result ->
                         Log.d(TAG, "Upload result for book $bookId: $result")
                         when (result) {
                             is BookServiceClient.UploadResult.Success -> {
@@ -76,7 +80,7 @@ class UploadManager(
                 } else {
                     val missing = mutableListOf<String>()
                     if (coverPage == null) missing.add("cover")
-                    if (infoPage == null) missing.add("info page")
+                    if (infoPages.isEmpty()) missing.add("info page(s)")
                     updateProgress(bookId, UploadState.Error("Missing: ${missing.joinToString(", ")}"))
                 }
             } catch (e: Exception) {
