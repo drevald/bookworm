@@ -38,6 +38,19 @@ class BookRepository(
         bookDao.deleteBookById(bookId)
     }
 
+    suspend fun deleteAllSentBooks() {
+        // Get all books with SENT or PROCESSED status
+        val allBooks = bookDao.getAllBooksSync()
+        val sentBooks = allBooks.filter {
+            it.status == BookStatus.SENT || it.status == BookStatus.PROCESSED
+        }
+
+        // Delete each sent book
+        sentBooks.forEach { book ->
+            deleteBook(book.id)
+        }
+    }
+
     // Page operations
     fun getPagesForBook(bookId: Long): Flow<List<PageEntity>> = bookDao.getPagesForBook(bookId)
 

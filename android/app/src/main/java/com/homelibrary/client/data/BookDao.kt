@@ -14,6 +14,9 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY createdAt DESC")
     fun getAllBooks(): Flow<List<BookEntity>>
 
+    @Query("SELECT * FROM books ORDER BY createdAt DESC")
+    suspend fun getAllBooksSync(): List<BookEntity>
+
     @Query("SELECT * FROM books WHERE id = :bookId")
     suspend fun getBookById(bookId: Long): BookEntity?
 
@@ -25,6 +28,9 @@ interface BookDao {
 
     @Query("UPDATE books SET status = :status WHERE id = :bookId")
     suspend fun updateBookStatus(bookId: Long, status: BookStatus)
+
+    @Query("UPDATE books SET shelfId = :shelfId WHERE id = :bookId")
+    suspend fun updateBookShelf(bookId: Long, shelfId: Long?)
 
     @Delete
     suspend fun deleteBook(book: BookEntity)

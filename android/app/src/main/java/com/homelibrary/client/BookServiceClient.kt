@@ -6,8 +6,8 @@ import android.util.Log
 import com.google.protobuf.ByteString
 import com.homelibrary.api.BookMetadata
 import com.homelibrary.api.BookServiceGrpc
-import com.homelibrary.api.ImageChunk
 import com.homelibrary.api.ImageType
+import com.homelibrary.api.PageImage
 import com.homelibrary.api.UploadBookRequest
 import com.homelibrary.api.UploadBookResponse
 import io.grpc.ManagedChannelBuilder
@@ -15,9 +15,6 @@ import io.grpc.stub.StreamObserver
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import java.io.InputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * gRPC client for communicating with the BookService server.
@@ -32,6 +29,8 @@ class BookServiceClient(private val host: String, private val port: Int) {
 
     private val channel = ManagedChannelBuilder.forAddress(host, port)
         .usePlaintext()
+        .maxInboundMessageSize(32 * 1024 * 1024)  // 32 MB for receiving responses
+        .maxInboundMetadataSize(8 * 1024 * 1024)  // 8 MB for metadata
         .build()
 
     private val stub = BookServiceGrpc.newStub(channel)
@@ -70,35 +69,40 @@ class BookServiceClient(private val host: String, private val port: Int) {
             }
         }
 
-        val requestObserver = stub.uploadBook(responseObserver)
-
         try {
-            // 1. Send Metadata (optional, can be empty for now)
-            requestObserver.onNext(
-                UploadBookRequest.newBuilder()
-                    .setMetadata(BookMetadata.newBuilder()
-                        .setClientRefId("android_client")
-                        .setLanguage(language)
-                        .build())
-                    .build()
-            )
+            Log.d(TAG, "Uploading cover and ${infoUris.size} info page(s)")
 
-            // 2. Send Images
-            Log.d(TAG, "Sending cover and ${infoUris.size} info page(s)")
+            // Build list of PageImages
+            val pageImages = mutableListOf<PageImage>()
 
-            // Send all info pages first
+            // Add all info pages
             infoUris.forEachIndexed { index, infoUri ->
-                Log.d(TAG, "Sending info page ${index + 1}/${infoUris.size}")
-                sendImage(context, infoUri, ImageType.INFO_PAGE, requestObserver)
+                Log.d(TAG, "Loading info page ${index + 1}/${infoUris.size}")
+                val pageImage = loadImage(context, infoUri, ImageType.INFO_PAGE)
+                pageImages.add(pageImage)
             }
 
-            // Send cover
-            sendImage(context, coverUri, ImageType.COVER, requestObserver)
+            // Add cover
+            val coverImage = loadImage(context, coverUri, ImageType.COVER)
+            pageImages.add(coverImage)
 
-            requestObserver.onCompleted()
+            // Build request
+            val request = UploadBookRequest.newBuilder()
+                .setMetadata(
+                    BookMetadata.newBuilder()
+                        .setClientRefId("android_client")
+                        .setLanguage(language)
+                        .build()
+                )
+                .addAllImages(pageImages)
+                .build()
+
+            Log.d(TAG, "Sending request with ${pageImages.size} images")
+
+            // Make unary call
+            stub.uploadBook(request, responseObserver)
 
         } catch (e: Exception) {
-            requestObserver.onError(e)
             trySend(UploadResult.Error(e.message ?: "Upload failed"))
             close()
         }
@@ -108,31 +112,22 @@ class BookServiceClient(private val host: String, private val port: Int) {
         }
     }
 
-    private fun sendImage(
+    private fun loadImage(
         context: Context,
         uri: Uri,
-        type: ImageType,
-        observer: StreamObserver<UploadBookRequest>
-    ) {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-        inputStream?.use { stream ->
-            val buffer = ByteArray(1024 * 16) // 16KB chunks
-            var bytesRead: Int
-            var totalBytes = 0
-            while (stream.read(buffer).also { bytesRead = it } != -1) {
-                totalBytes += bytesRead
-                val chunk = ImageChunk.newBuilder()
-                    .setType(type)
-                    .setData(ByteString.copyFrom(buffer, 0, bytesRead))
-                    .build()
-                
-                observer.onNext(
-                    UploadBookRequest.newBuilder()
-                        .setImageChunk(chunk)
-                        .build()
-                )
-            }
-            Log.i(TAG, "[IMAGE_SIZE] Before sending to server - Type: $type, Total bytes: $totalBytes")
+        type: ImageType
+    ): PageImage {
+        val inputStream = context.contentResolver.openInputStream(uri)
+            ?: throw IllegalArgumentException("Cannot open input stream for URI: $uri")
+
+        inputStream.use { stream ->
+            val imageData = stream.readBytes()
+            Log.i(TAG, "[IMAGE_SIZE] Loaded image - Type: $type, Total bytes: ${imageData.size}")
+
+            return PageImage.newBuilder()
+                .setType(type)
+                .setData(ByteString.copyFrom(imageData))
+                .build()
         }
     }
 

@@ -129,12 +129,38 @@ class MainActivity : AppCompatActivity() {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
+            R.id.action_shelves -> {
+                startActivity(Intent(this, ShelfManagementActivity::class.java))
+                true
+            }
+            R.id.action_cleanup -> {
+                confirmAndCleanupSentBooks()
+                true
+            }
             R.id.action_settings -> {
                 startActivity(Intent(this, SettingsActivity::class.java))
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun confirmAndCleanupSentBooks() {
+        AlertDialog.Builder(this)
+            .setTitle("Clean Up Sent Books")
+            .setMessage("This will delete all books that have been sent to the server. This action cannot be undone. Continue?")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    repository.deleteAllSentBooks()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Sent books deleted successfully",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     companion object {

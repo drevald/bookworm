@@ -43,7 +43,7 @@ public class PythonOCRService {
         @JsonProperty("back_image")
         private String backImage;
 
-        private String language = "rus+eng";
+        private String language = "rus";
     }
 
     @Data
@@ -54,7 +54,7 @@ public class PythonOCRService {
         private String isbn;
         private String publisher;
 
-        @JsonProperty("publication_year")
+        @JsonProperty("year")
         private Integer publicationYear;
 
         private String udk;
@@ -84,7 +84,7 @@ public class PythonOCRService {
             log.info("Calling Python OCR service at: {}", ocrServiceUrl);
 
             OCRRequest request = new OCRRequest();
-            request.setLanguage(language != null ? language : "rus+eng");
+            request.setLanguage(language != null ? language : "rus");
 
             if (coverImage != null && coverImage.length > 0) {
                 request.setCoverImage(Base64.getEncoder().encodeToString(coverImage));

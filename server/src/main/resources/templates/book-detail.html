@@ -151,12 +151,16 @@
             return confirm("Are you sure you want to delete this book? This action cannot be undone.");
         }
 
-        function reprocessBook() {
-            if (confirm('Reprocess OCR for this book?')) {
-                fetch(`/books/${bookId}/reprocess`, { method: 'POST' })
+        function reprocessBook(language) {
+            const langName = language === 'rus' ? 'Russian (Cyrillic)' : 'English';
+            if (confirm(`Reprocess OCR for this book using ${langName}?`)) {
+                fetch(`/books/${bookId}/reprocess?language=${encodeURIComponent(language)}`, { method: 'POST' })
                     .then(response => response.text())
                     .then(data => {
-                        alert('OCR reprocessing started! Refresh the page in a few seconds to see results.');
+                        alert('OCR reprocessing started! The page will refresh in 5 seconds.');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 5000);
                     })
                     .catch(error => {
                         alert('Error: ' + error);
@@ -352,6 +356,15 @@
                 <div style="margin-bottom: 15px;">
                     <strong>BBK:</strong> <span th:text="${book.bbk ?: 'Not available'}">Not available</span>
                 </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Shelf:</strong>
+                    <span th:if="${book.shelf != null}">
+                        <a th:href="@{/shelves/{id}(id=${book.shelf.id})}"
+                           th:text="${book.shelf.name}"
+                           style="color: #007bff; text-decoration: none;">Shelf Name</a>
+                    </span>
+                    <span th:if="${book.shelf == null}">Not assigned</span>
+                </div>
                 <div th:if="${book.annotation != null and !#strings.isEmpty(book.annotation)}" style="margin-bottom: 15px;">
                     <strong>Annotation:</strong>
                     <div style="margin-top: 8px; padding: 12px; background-color: #f8f9fa; border-left: 3px solid #007bff; border-radius: 4px; line-height: 1.6;">
@@ -368,7 +381,8 @@
             <form th:action="@{/books/{id}/delete(id=${book.id})}" method="post" style="display: inline;" onsubmit="return confirmDelete()">
                 <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">DELETE</button>
             </form>
-            <button onclick="reprocessBook()" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REGEN</button>
+            <button onclick="reprocessBook('rus')" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; margin-right: 10px;">REGEN (RUS)</button>
+            <button onclick="reprocessBook('eng')" style="background-color: #007bff; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REGEN (ENG)</button>
         </div>
 
         <!-- The Modal -->

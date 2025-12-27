@@ -7,6 +7,34 @@
     android:background="#F5F5F5"
     tools:context=".BookEditActivity">
 
+    <!-- Shelf Selection -->
+    <LinearLayout
+        android:id="@+id/shelfSelectionLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="@android:color/white"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Shelf:"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginEnd="12dp" />
+
+        <Spinner
+            android:id="@+id/shelfSpinner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp" />
+
+    </LinearLayout>
+
     <!-- Pages List -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/pagesRecyclerView"
@@ -15,7 +43,7 @@
         android:clipToPadding="false"
         android:padding="16dp"
         app:layout_constraintBottom_toTopOf="@+id/bottomActionBar"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/shelfSelectionLayout"
         tools:listitem="@layout/item_page" />
 
     <!-- Delete Book Button -->

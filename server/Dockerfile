@@ -29,10 +29,8 @@ RUN apt-get update && \
 COPY tessdata /app/tessdata
 ENV TESSDATA_PREFIX=/app/tessdata/
 
-ENV JAVA_TOOL_OPTIONS=""
-
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-EXPOSE 8080 9090
+EXPOSE 8080 9090 5005
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

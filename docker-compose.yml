@@ -35,7 +35,8 @@ services:
     container_name: bookworm-server
     ports:
       - 9090:9090      # gRPC port
-      - 4040:8080    # Web UI port
+      - 4040:8080      # Web UI port
+      - 5005:5005      # Debug port
     depends_on:
       - db
       - ocr-service
@@ -46,6 +47,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: bookworm
       # Python OCR Service
       OCR_SERVICE_URL: http://ocr-service:5000
+      # JVM remote debugging
+      JAVA_TOOL_OPTIONS: >
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005    
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

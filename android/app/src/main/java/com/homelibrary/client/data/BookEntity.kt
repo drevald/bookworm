@@ -8,6 +8,7 @@ data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val clientRefId: String,
     val status: BookStatus,
+    val shelfId: Long? = null,
     val createdAt: Long
 )
 

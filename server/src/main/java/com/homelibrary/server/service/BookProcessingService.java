@@ -114,6 +114,7 @@ public class BookProcessingService {
                 }
             }
 
+            log.info("About to save book {} with title: '{}'", bookId, book.getTitle());
             bookRepository.save(book);
             log.info("Finished async processing for book ID: {}", bookId);
 

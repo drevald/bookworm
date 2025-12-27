@@ -33,7 +33,8 @@
         <activity android:name=".ReviewActivity" />
         <activity android:name=".BookEditActivity" />
         <activity android:name=".SettingsActivity" />
-        
+        <activity android:name=".ShelfManagementActivity" />
+
     </application>
 
 </manifest>

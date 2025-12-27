@@ -58,7 +58,7 @@ class ReviewActivity : AppCompatActivity() {
                 client.uploadBook(
                     applicationContext,
                     capturedUris!![0], // Cover
-                    capturedUris!![1]  // Info
+                    capturedUris!!.drop(1)  // All remaining pages as info pages
                 ).collect { result ->
                     withContext(Dispatchers.Main) {
                         when (result) {

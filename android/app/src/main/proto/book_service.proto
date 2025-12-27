@@ -7,14 +7,12 @@ option java_package = "com.homelibrary.api";
 
 service BookService {
   // Uploads a new book entry with images
-  rpc UploadBook (stream UploadBookRequest) returns (UploadBookResponse);
+  rpc UploadBook (UploadBookRequest) returns (UploadBookResponse);
 }
 
 message UploadBookRequest {
-  oneof payload {
-    BookMetadata metadata = 1;
-    ImageChunk image_chunk = 2;
-  }
+  BookMetadata metadata = 1;
+  repeated PageImage images = 2;
 }
 
 message BookMetadata {
@@ -23,7 +21,7 @@ message BookMetadata {
   string language = 2; // e.g. "rus", "eng", "rus+eng"
 }
 
-message ImageChunk {
+message PageImage {
   ImageType type = 1;
   bytes data = 2;
 }

@@ -3,6 +3,9 @@ package com.homelibrary.client
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -13,6 +16,7 @@ import com.homelibrary.client.data.AppDatabase
 import com.homelibrary.client.data.BookRepository
 import com.homelibrary.client.data.PageEntity
 import com.homelibrary.client.data.PageType
+import com.homelibrary.client.data.ShelfEntity
 import com.homelibrary.client.databinding.ActivityBookEditBinding
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -24,10 +28,13 @@ class BookEditActivity : AppCompatActivity() {
     private lateinit var repository: BookRepository
     private lateinit var pageAdapter: PageAdapter
     private lateinit var uploadManager: UploadManager
-    
+    private lateinit var database: AppDatabase
+
     private var bookId: Long = -1
     private var isNewBook: Boolean = false
     private var pendingPageType: PageType? = null
+    private var shelves: List<ShelfEntity> = emptyList()
+    private var selectedShelfId: Long? = null
 
     private val captureResult = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -60,10 +67,13 @@ class BookEditActivity : AppCompatActivity() {
         }
 
         // Initialize repository and upload manager
-        val database = AppDatabase.getDatabase(this)
+        database = AppDatabase.getDatabase(this)
         val imageStorageDir = File(filesDir, "book_images").also { it.mkdirs() }
         repository = BookRepository(database.bookDao(), imageStorageDir)
         uploadManager = UploadManager.getInstance(this)
+
+        // Setup shelf spinner
+        setupShelfSpinner()
 
         // Setup RecyclerView
         pageAdapter = PageAdapter(
@@ -142,12 +152,17 @@ class BookEditActivity : AppCompatActivity() {
 
     private fun sendBook() {
         lifecycleScope.launch {
+            // Save shelf selection before sending
+            if (selectedShelfId != null) {
+                database.bookDao().updateBookShelf(bookId, selectedShelfId)
+            }
+
             val bookWithPages = repository.getBookWithPages(bookId)
             if (bookWithPages != null) {
                 // Validate required pages
                 val hasCover = bookWithPages.pages.any { it.type == PageType.COVER }
                 val hasInfo = bookWithPages.pages.any { it.type == PageType.INFO_PAGE }
-                
+
                 if (!hasCover || !hasInfo) {
                     val missing = mutableListOf<String>()
                     if (!hasCover) missing.add("cover")
@@ -159,10 +174,56 @@ class BookEditActivity : AppCompatActivity() {
                     ).show()
                     return@launch
                 }
-                
+
                 uploadManager.uploadBook(bookWithPages)
                 Toast.makeText(this@BookEditActivity, "Upload started", Toast.LENGTH_SHORT).show()
                 finish()
+            }
+        }
+    }
+
+    private fun setupShelfSpinner() {
+        lifecycleScope.launch {
+            // Observe shelves
+            database.shelfDao().getAllShelves().collectLatest { shelfList ->
+                shelves = shelfList
+
+                // Create adapter with "No shelf" option + shelf names
+                val shelfNames = mutableListOf("No shelf")
+                shelfNames.addAll(shelfList.map { it.name })
+
+                val adapter = ArrayAdapter(
+                    this@BookEditActivity,
+                    android.R.layout.simple_spinner_item,
+                    shelfNames
+                )
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                binding.shelfSpinner.adapter = adapter
+
+                // Load current book's shelf
+                val book = repository.getBookById(bookId)
+                if (book?.shelfId != null) {
+                    val shelfIndex = shelfList.indexOfFirst { it.id == book.shelfId }
+                    if (shelfIndex >= 0) {
+                        binding.shelfSpinner.setSelection(shelfIndex + 1) // +1 for "No shelf" option
+                        selectedShelfId = book.shelfId
+                    }
+                }
+
+                // Handle shelf selection
+                binding.shelfSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        selectedShelfId = if (position == 0) {
+                            null // "No shelf" selected
+                        } else {
+                            shelves[position - 1].id
+                        }
+                    }
+
+                    override fun onNothingSelected(parent: AdapterView<*>?) {
+                        selectedShelfId = null
+                    }
+                }
             }
         }
     }

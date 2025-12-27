@@ -35,11 +35,11 @@ public class Book {
     @Column(length = 2000)
     private String annotation;
 
-    @ManyToOne(cascade = CascadeType.ALL)
+    @ManyToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinColumn(name = "publisher_id")
     private Publisher publisher;
 
-    @ManyToMany(cascade = CascadeType.ALL)
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinTable(
         name = "book_authors",
         joinColumns = @JoinColumn(name = "book_id"),
@@ -53,6 +53,10 @@ public class Book {
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private Set<Image> images = new HashSet<>();
+
+    @ManyToOne
+    @JoinColumn(name = "shelf_id")
+    private Shelf shelf;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

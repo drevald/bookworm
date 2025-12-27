@@ -6,12 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [BookEntity::class, PageEntity::class],
-    version = 1,
+    entities = [BookEntity::class, PageEntity::class, ShelfEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
+    abstract fun shelfDao(): ShelfDao
 
     companion object {
         @Volatile
@@ -23,7 +24,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "bookworm_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()  // For development - will delete data on schema change
+                .build()
                 INSTANCE = instance
                 instance
             }

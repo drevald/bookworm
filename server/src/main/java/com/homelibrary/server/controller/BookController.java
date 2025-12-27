@@ -194,7 +194,7 @@ public class BookController {
 
     @PostMapping("/books/{id}/reprocess")
     @ResponseBody
-    public ResponseEntity<String> reprocessBook(@PathVariable UUID id, @RequestParam(defaultValue = "rus+eng") String language) {
+    public ResponseEntity<String> reprocessBook(@PathVariable UUID id, @RequestParam(defaultValue = "rus") String language) {
         log.info("=== REPROCESS REQUEST ===");
         log.info("Book ID: {}", id);
         log.info("Language parameter received: '{}'", language);

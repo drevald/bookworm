@@ -1,26 +1,14 @@
 package com.homelibrary.server.service;
 
-import com.google.protobuf.ByteString;
 import com.homelibrary.api.*;
-import com.homelibrary.server.domain.Author;
 import com.homelibrary.server.domain.Book;
 import com.homelibrary.server.domain.Image;
-import com.homelibrary.server.domain.Publisher;
-import com.homelibrary.server.repository.AuthorRepository;
 import com.homelibrary.server.repository.BookRepository;
-import com.homelibrary.server.repository.PublisherRepository;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 @GrpcService
 @Slf4j
@@ -31,97 +19,58 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
     private final BookProcessingService bookProcessingService;
 
     @Override
-    public StreamObserver<UploadBookRequest> uploadBook(StreamObserver<UploadBookResponse> responseObserver) {
-        return new StreamObserver<>() {
-            private final Map<ImageType, List<ByteArrayOutputStream>> imageBuffers = new HashMap<>();
-            private BookMetadata metadata;
-            private ImageType previousChunkType = null;
-            private ByteArrayOutputStream currentStream = null;
+    public void uploadBook(UploadBookRequest request, StreamObserver<UploadBookResponse> responseObserver) {
+        try {
+            log.info("[IMAGE_UPLOAD] Received upload request with {} images", request.getImagesCount());
 
-            @Override
-            public void onNext(UploadBookRequest request) {
-                if (request.hasMetadata()) {
-                    this.metadata = request.getMetadata();
-                } else if (request.hasImageChunk()) {
-                    ImageChunk chunk = request.getImageChunk();
+            // 1. Save Book and Images immediately (Synchronous)
+            Book savedBook = saveBookInitial(request);
 
-                    // Detect new image: type changed from previous chunk OR first chunk
-                    if (previousChunkType != chunk.getType() || currentStream == null) {
-                        currentStream = new ByteArrayOutputStream();
-                        imageBuffers.computeIfAbsent(chunk.getType(), k -> new ArrayList<>()).add(currentStream);
-                        log.info("[IMAGE_UPLOAD] Starting new image - Type: {}, Total images of this type: {}",
-                                chunk.getType(), imageBuffers.get(chunk.getType()).size());
-                    }
+            // 2. Trigger Async Processing (OCR & Parsing)
+            String language = request.hasMetadata() ? request.getMetadata().getLanguage() : null;
+            bookProcessingService.processBookAsync(savedBook.getId(), language);
 
-                    try {
-                        chunk.getData().writeTo(currentStream);
-                        previousChunkType = chunk.getType();
-                    } catch (IOException e) {
-                        log.error("Error writing image chunk", e);
-                        onError(e);
-                    }
-                }
-            }
+            // 3. Return immediate response
+            UploadBookResponse response = UploadBookResponse.newBuilder()
+                    .setSuccess(true)
+                    .setBookId(savedBook.getId().toString())
+                    .setTitle("") // Title will be populated later
+                    .setIsbn("")
+                    .setPublicationYear(0)
+                    .build();
 
-            @Override
-            public void onError(Throwable t) {
-                log.error("Upload failed", t);
-            }
-
-            @Override
-            public void onCompleted() {
-                try {
-                    // 1. Save Book and Images immediately (Synchronous)
-                    Book savedBook = saveBookInitial(imageBuffers);
-
-                    // 2. Trigger Async Processing (OCR & Parsing)
-                    String language = (metadata != null) ? metadata.getLanguage() : null;
-                    bookProcessingService.processBookAsync(savedBook.getId(), language);
-
-                    // 3. Return immediate response
-                    UploadBookResponse.Builder response = UploadBookResponse.newBuilder()
-                            .setSuccess(true)
-                            .setBookId(savedBook.getId().toString())
-                            .setTitle("") // Title will be populated later
-                            .setIsbn("")
-                            .setPublicationYear(0);
-
-                    responseObserver.onNext(response.build());
-                    responseObserver.onCompleted();
-                } catch (Exception e) {
-                    log.error("Processing failed", e);
-                    responseObserver.onNext(UploadBookResponse.newBuilder()
-                            .setSuccess(false)
-                            .setErrorMessage(e.getMessage())
-                            .build());
-                    responseObserver.onCompleted();
-                }
-            }
-        };
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            log.error("Processing failed", e);
+            responseObserver.onNext(UploadBookResponse.newBuilder()
+                    .setSuccess(false)
+                    .setErrorMessage(e.getMessage())
+                    .build());
+            responseObserver.onCompleted();
+        }
     }
 
     @Transactional
-    protected Book saveBookInitial(Map<ImageType, List<ByteArrayOutputStream>> imageBuffers) {
+    protected Book saveBookInitial(UploadBookRequest request) {
         Book book = new Book();
 
-        for (Map.Entry<ImageType, List<ByteArrayOutputStream>> entry : imageBuffers.entrySet()) {
-            ImageType type = entry.getKey();
-            List<ByteArrayOutputStream> streams = entry.getValue();
+        for (int i = 0; i < request.getImagesCount(); i++) {
+            PageImage pageImage = request.getImages(i);
+            byte[] data = pageImage.getData().toByteArray();
 
-            for (int i = 0; i < streams.size(); i++) {
-                byte[] data = streams.get(i).toByteArray();
+            // Log image size when received and before storing
+            log.info("[IMAGE_SIZE] Server received - Type: {}, Index: {}, Size: {} bytes",
+                    pageImage.getType(), i, data.length);
+            log.info("[IMAGE_SIZE] Before storing in DB - Type: {}, Index: {}, Size: {} bytes",
+                    pageImage.getType(), i, data.length);
 
-                // Log image size when received and before storing
-                log.info("[IMAGE_SIZE] Server received - Type: {}, Index: {}, Size: {} bytes", type, i, data.length);
-                log.info("[IMAGE_SIZE] Before storing in DB - Type: {}, Index: {}, Size: {} bytes", type, i, data.length);
-
-                // Save Image Entity
-                Image image = new Image();
-                image.setBook(book);
-                image.setData(data);
-                image.setType(Image.ImageType.valueOf(type.name())); // Map proto enum to domain enum
-                book.getImages().add(image);
-            }
+            // Save Image Entity
+            Image image = new Image();
+            image.setBook(book);
+            image.setData(data);
+            image.setType(Image.ImageType.valueOf(pageImage.getType().name())); // Map proto enum to domain enum
+            book.getImages().add(image);
         }
 
         log.info("[IMAGE_SAVE] Saved book with {} total images", book.getImages().size());
