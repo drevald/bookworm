@@ -45,6 +45,9 @@ interface BookDao {
     @Query("SELECT * FROM pages WHERE bookId = :bookId ORDER BY sortOrder")
     suspend fun getPagesForBookSync(bookId: Long): List<PageEntity>
 
+    @Query("SELECT * FROM pages WHERE id = :pageId")
+    suspend fun getPageById(pageId: Long): PageEntity?
+
     @Insert
     suspend fun insertPage(page: PageEntity): Long
 

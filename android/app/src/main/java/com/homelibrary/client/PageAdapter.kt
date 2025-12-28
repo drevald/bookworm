@@ -1,6 +1,7 @@
 package com.homelibrary.client
 
 import android.graphics.BitmapFactory
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -9,10 +10,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.homelibrary.client.data.PageEntity
 import com.homelibrary.client.data.PageType
 import com.homelibrary.client.databinding.ItemPageBinding
+import java.io.File
 
 class PageAdapter(
     private val onRetakeClick: (PageEntity) -> Unit,
-    private val onDeleteClick: (PageEntity) -> Unit
+    private val onDeleteClick: (PageEntity) -> Unit,
+    private val onChangeTypeClick: (PageEntity) -> Unit,
+    private val onImageClick: (PageEntity) -> Unit
 ) : ListAdapter<PageEntity, PageAdapter.PageViewHolder>(PageDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageViewHolder {
@@ -50,13 +54,30 @@ class PageAdapter(
 
             // Load thumbnail from file
             try {
-                val bitmap = BitmapFactory.decodeFile(page.imagePath)
-                binding.pageThumbnail.setImageBitmap(bitmap)
+                val imageFile = File(page.imagePath)
+                Log.d("PageAdapter", "Loading image: ${page.imagePath}, exists: ${imageFile.exists()}, size: ${imageFile.length()}")
+
+                if (imageFile.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(page.imagePath)
+                    if (bitmap != null) {
+                        binding.pageThumbnail.setImageBitmap(bitmap)
+                        Log.d("PageAdapter", "Bitmap loaded successfully: ${bitmap.width}x${bitmap.height}")
+                    } else {
+                        Log.e("PageAdapter", "BitmapFactory.decodeFile returned null for ${page.imagePath}")
+                        binding.pageThumbnail.setImageResource(android.R.color.darker_gray)
+                    }
+                } else {
+                    Log.e("PageAdapter", "Image file does not exist: ${page.imagePath}")
+                    binding.pageThumbnail.setImageResource(android.R.color.darker_gray)
+                }
             } catch (e: Exception) {
+                Log.e("PageAdapter", "Error loading image: ${page.imagePath}", e)
                 binding.pageThumbnail.setImageResource(android.R.color.darker_gray)
             }
 
             // Click listeners
+            binding.pageThumbnail.setOnClickListener { onImageClick(page) }
+            binding.changeTypeButton.setOnClickListener { onChangeTypeClick(page) }
             binding.retakeButton.setOnClickListener { onRetakeClick(page) }
             binding.deletePageButton.setOnClickListener { onDeleteClick(page) }
         }

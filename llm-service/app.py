@@ -377,7 +377,7 @@ def build_extraction_prompt(ocr_text: str, author_hint: str, isbn_hint: str, udk
 
 1. TITLE EXTRACTION (MOST IMPORTANT):
    - Find the bibliographic entry line (format: "Author. Title / Author. — Publisher, Year")
-   - Extract the FULL title (between author name and " / " or " — "), INCLUDING subtitle after colon
+   - Extract the title (between author name and " / " or " — "), STOP at colon (:) - exclude subtitle/translation info
    - If NO bibliographic entry exists (e.g., copyright page, blank page), return "unknown"
    - CRITICAL: If text contains "copyright", "trademark", "reserved", "indicia" → NOT A TITLE, return "unknown"
    - CRITICAL: Bibliographic entries have "—" or "/" separator and publication year, copyright text does NOT
@@ -458,6 +458,22 @@ def normalize_author_title(data):
         garbage_keywords = ["copyright", "trademark", "reserved", "indicia", "rights reserved"]
         if any(keyword in title_lower for keyword in garbage_keywords):
             data["title"] = "unknown"
+
+    # Strip GOST classification codes (e.g., "B 68 Title" -> "Title")
+    if data.get("title") and data["title"] != "unknown":
+        title = re.sub(r'^[A-ZА-Я]\s+\d+\s+', '', data["title"])
+        data["title"] = title.strip()
+
+    # Strip publishing info after em-dash (e.g., "Title. — Publisher, Year" -> "Title")
+    if data.get("title") and data["title"] != "unknown":
+        title_parts = re.split(r'\s*—\s*', data["title"], maxsplit=1)
+        data["title"] = title_parts[0].strip().rstrip('.')
+
+    # Strip subtitle/translation info after colon
+    if data.get("title") and data["title"] != "unknown":
+        # Split on colon and take only the first part
+        title_parts = re.split(r'\s*:\s*', data["title"], maxsplit=1)
+        data["title"] = title_parts[0].strip()
 
     # Extract author from title if embedded
     m = re.match(r'^([А-ЯЁ][а-яё]+),\s*([А-ЯЁ][а-яё]+)\.\s*[—-]\s*(.+)', data.get("title", ""))

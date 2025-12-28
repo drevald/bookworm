@@ -1,9 +1,14 @@
 package com.homelibrary.client
 
+import android.app.Activity
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -14,6 +19,8 @@ import com.homelibrary.client.data.AppDatabase
 import com.homelibrary.client.data.ShelfEntity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.io.File
 
 class ShelfManagementActivity : AppCompatActivity() {
 
@@ -22,6 +29,39 @@ class ShelfManagementActivity : AppCompatActivity() {
     private lateinit var addShelfFab: FloatingActionButton
     private lateinit var shelfAdapter: ShelfAdapter
     private lateinit var database: AppDatabase
+
+    private var pendingShelfName: String? = null
+    private var pendingShelfPhoto: ByteArray? = null
+    private var editingShelf: ShelfEntity? = null
+
+    private val capturePhotoLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val imagePath = result.data?.getStringExtra(CaptureActivity.EXTRA_IMAGE_PATH)
+            if (imagePath != null) {
+                // Compress image to low-res thumbnail
+                pendingShelfPhoto = compressImageToThumbnail(File(imagePath))
+
+                // Check if we're editing an existing shelf or creating new
+                if (editingShelf != null) {
+                    // Update existing shelf with new photo
+                    updateShelf(editingShelf!!.copy(photo = pendingShelfPhoto))
+                    editingShelf = null
+                    pendingShelfName = null
+                    pendingShelfPhoto = null
+                } else if (pendingShelfName != null) {
+                    // Create new shelf with name and photo
+                    createShelf(pendingShelfName, pendingShelfPhoto)
+                    pendingShelfName = null
+                    pendingShelfPhoto = null
+                } else {
+                    // Ask for name (optional)
+                    showNameInputDialog()
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,30 +108,60 @@ class ShelfManagementActivity : AppCompatActivity() {
     }
 
     private fun showAddShelfDialog() {
-        val input = EditText(this).apply {
-            hint = "Shelf name"
-        }
-
         AlertDialog.Builder(this)
             .setTitle("Add Shelf")
-            .setView(input)
-            .setPositiveButton("Add") { _, _ ->
-                val shelfName = input.text.toString().trim()
-                if (shelfName.isNotEmpty()) {
-                    addShelf(shelfName)
-                } else {
-                    Toast.makeText(this, "Shelf name cannot be empty", Toast.LENGTH_SHORT).show()
-                }
+            .setMessage("Choose how to create shelf:")
+            .setPositiveButton("Take Photo") { _, _ ->
+                captureShelfPhoto()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Enter Name") { _, _ ->
+                showNameInputDialog()
+            }
+            .setNeutralButton("Cancel", null)
             .show()
     }
 
-    private fun addShelf(name: String) {
+    private fun showNameInputDialog() {
+        val input = EditText(this).apply {
+            hint = "Shelf name (optional if photo provided)"
+            setText(pendingShelfName ?: "")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Shelf Name")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val shelfName = input.text.toString().trim()
+                val name = if (shelfName.isNotEmpty()) shelfName else null
+
+                if (name == null && pendingShelfPhoto == null) {
+                    Toast.makeText(this, "Please provide either a name or photo", Toast.LENGTH_SHORT).show()
+                } else {
+                    createShelf(name, pendingShelfPhoto)
+                    pendingShelfName = null
+                    pendingShelfPhoto = null
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                pendingShelfName = null
+                pendingShelfPhoto = null
+            }
+            .show()
+    }
+
+    private fun captureShelfPhoto() {
+        val intent = Intent(this, CaptureActivity::class.java).apply {
+            putExtra(CaptureActivity.EXTRA_PAGE_TYPE, "SHELF")
+        }
+        capturePhotoLauncher.launch(intent)
+    }
+
+    private fun createShelf(name: String?, photo: ByteArray?) {
         lifecycleScope.launch {
+            val shelfName = name ?: "Shelf ${System.currentTimeMillis()}"
             val shelf = ShelfEntity(
-                name = name,
-                photoPath = null,
+                name = shelfName,
+                photo = photo,
                 createdAt = System.currentTimeMillis()
             )
             database.shelfDao().insertShelf(shelf)
@@ -99,14 +169,58 @@ class ShelfManagementActivity : AppCompatActivity() {
         }
     }
 
+    private fun compressImageToThumbnail(imageFile: File, maxSize: Int = 200): ByteArray? {
+        return try {
+            // Decode image
+            val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
+
+            // Calculate scaled dimensions
+            val ratio = maxSize.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val scaledWidth = (bitmap.width * ratio).toInt()
+            val scaledHeight = (bitmap.height * ratio).toInt()
+
+            // Create scaled bitmap
+            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+
+            // Compress to JPEG byte array
+            val outputStream = ByteArrayOutputStream()
+            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val result = outputStream.toByteArray()
+
+            // Cleanup
+            bitmap.recycle()
+            scaledBitmap.recycle()
+
+            result
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     private fun editShelf(shelf: ShelfEntity) {
+        AlertDialog.Builder(this)
+            .setTitle("Edit Shelf")
+            .setMessage("What would you like to edit?")
+            .setPositiveButton("Change Photo") { _, _ ->
+                editingShelf = shelf
+                captureShelfPhoto()
+            }
+            .setNegativeButton("Rename") { _, _ ->
+                showRenameDialog(shelf)
+            }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    private fun showRenameDialog(shelf: ShelfEntity) {
         val input = EditText(this).apply {
             setText(shelf.name)
             hint = "Shelf name"
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Edit Shelf")
+            .setTitle("Rename Shelf")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val newName = input.text.toString().trim()

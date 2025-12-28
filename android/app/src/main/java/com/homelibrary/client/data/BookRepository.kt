@@ -74,6 +74,13 @@ class BookRepository(
         bookDao.deletePageById(pageId)
     }
 
+    suspend fun updatePageType(pageId: Long, newType: PageType) {
+        val page = bookDao.getPageById(pageId)
+        page?.let {
+            bookDao.updatePage(it.copy(type = newType))
+        }
+    }
+
     suspend fun retakePage(pageId: Long, oldImagePath: String, newImageFile: File) {
         // Delete old image
         File(oldImagePath).delete()

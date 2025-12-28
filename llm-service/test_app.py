@@ -102,7 +102,7 @@ def normalize_classification(value) -> str:
     return normalized
 
 
-@pytest.mark.parametrize("book_dir", get_book_test_cases())
+@pytest.mark.parametrize("book_dir", get_book_test_cases(), ids=lambda d: d.name)
 def test_extract_metadata(book_dir):
     """Test metadata extraction for each book"""
     expected_file = book_dir / "expected.json"

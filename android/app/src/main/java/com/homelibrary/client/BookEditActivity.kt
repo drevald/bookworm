@@ -2,10 +2,12 @@ package com.homelibrary.client
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -78,10 +80,12 @@ class BookEditActivity : AppCompatActivity() {
         // Setup RecyclerView
         pageAdapter = PageAdapter(
             onRetakeClick = { page -> retakePage(page) },
-            onDeleteClick = { page -> confirmDeletePage(page) }
+            onDeleteClick = { page -> confirmDeletePage(page) },
+            onChangeTypeClick = { page -> showChangeTypeDialog(page) },
+            onImageClick = { page -> showFullScreenImage(page) }
         )
         binding.pagesRecyclerView.apply {
-            layoutManager = LinearLayoutManager(this@BookEditActivity)
+            layoutManager = LinearLayoutManager(this@BookEditActivity, LinearLayoutManager.HORIZONTAL, false)
             adapter = pageAdapter
         }
 
@@ -122,6 +126,34 @@ class BookEditActivity : AppCompatActivity() {
         capturePhoto(page.type)
     }
 
+    private fun showChangeTypeDialog(page: PageEntity) {
+        val pageTypes = PageType.values()
+        val pageTypeNames = pageTypes.map { type ->
+            when (type) {
+                PageType.COVER -> "Cover"
+                PageType.INFO_PAGE -> "Info Page"
+                PageType.OTHER -> "Other Page"
+            }
+        }.toTypedArray()
+
+        // Find current type index
+        val currentIndex = pageTypes.indexOf(page.type)
+
+        AlertDialog.Builder(this)
+            .setTitle("Change Page Type")
+            .setSingleChoiceItems(pageTypeNames, currentIndex) { dialog, which ->
+                val newType = pageTypes[which]
+                if (newType != page.type) {
+                    lifecycleScope.launch {
+                        repository.updatePageType(page.id, newType)
+                    }
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun confirmDeletePage(page: PageEntity) {
         AlertDialog.Builder(this)
             .setTitle("Delete Page")
@@ -131,7 +163,6 @@ class BookEditActivity : AppCompatActivity() {
                     repository.deletePage(page.id, page.imagePath)
                 }
             }
-            .setNegativeButton("Cancel", null)
             .setNegativeButton("Cancel", null)
             .show()
     }
@@ -180,6 +211,38 @@ class BookEditActivity : AppCompatActivity() {
                 finish()
             }
         }
+    }
+
+    private fun showFullScreenImage(page: PageEntity) {
+        val imageView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(android.graphics.Color.BLACK)
+
+            try {
+                val bitmap = BitmapFactory.decodeFile(page.imagePath)
+                if (bitmap != null) {
+                    setImageBitmap(bitmap)
+                } else {
+                    Toast.makeText(this@BookEditActivity, "Failed to load image", Toast.LENGTH_SHORT).show()
+                    return@apply
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@BookEditActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                return@apply
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setView(imageView)
+            .setPositiveButton("Close", null)
+            .create()
+            .apply {
+                window?.setLayout(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                show()
+            }
     }
 
     private fun setupShelfSpinner() {

@@ -41,9 +41,20 @@ class ShelfAdapter(
             shelfNameText.text = shelf.name
             bookCountText.text = "0 books" // TODO: Implement book count
 
-            // TODO: Load shelf photo if available
-            if (shelf.photoPath != null) {
-                // Load photo from path
+            // Load shelf photo if available
+            if (shelf.photo != null && shelf.photo.isNotEmpty()) {
+                try {
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(
+                        shelf.photo, 0, shelf.photo.size
+                    )
+                    if (bitmap != null) {
+                        shelfPhotoImageView.setImageBitmap(bitmap)
+                    } else {
+                        shelfPhotoImageView.setImageResource(android.R.drawable.ic_menu_gallery)
+                    }
+                } catch (e: Exception) {
+                    shelfPhotoImageView.setImageResource(android.R.drawable.ic_menu_gallery)
+                }
             } else {
                 shelfPhotoImageView.setImageResource(android.R.drawable.ic_menu_gallery)
             }
