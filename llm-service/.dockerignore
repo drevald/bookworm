@@ -1,0 +1,19 @@
+# Local development files
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test data
+test_data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${shelf.name} + ' - Home Library'">Shelf - Home Library</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <style>
+        .book-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        .book-card {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            transition: transform 0.2s;
+        }
+
+        .book-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .book-cover {
+            width: 100%;
+            height: 280px;
+            object-fit: cover;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .book-title {
+            margin-top: 10px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .book-authors {
+            margin-top: 5px;
+            font-size: 0.9em;
+            color: #666;
+            text-align: center;
+        }
+
+        .shelf-photo-container {
+            max-width: 800px;
+            margin: 30px auto;
+        }
+
+        .shelf-photo {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" style="padding: 60px;">
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
+            <h1 th:text="${shelf.name}" style="margin: 0; font-size: 2.5em;">Shelf Name</h1>
+            <a th:href="@{/}" style="background-color: #999; color: white; border: none; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px;">BACK</a>
+        </header>
+
+        <!-- Shelf Photo -->
+        <div th:if="${shelf.photo != null}" class="shelf-photo-container">
+            <img th:src="@{/shelves/{id}/photo(id=${shelf.id})}" th:alt="${shelf.name}" class="shelf-photo" />
+        </div>
+
+        <!-- Books on this shelf -->
+        <div style="margin-top: 50px;">
+            <h2 style="margin-bottom: 20px;">Books on this Shelf (<span th:text="${shelf.books.size()}">0</span>)</h2>
+
+            <div th:if="${shelf.books.empty}" style="text-align: center; padding: 60px; color: #999;">
+                <p style="font-size: 1.2em;">No books on this shelf yet</p>
+            </div>
+
+            <div th:if="${!shelf.books.empty}" class="book-grid">
+                <a th:each="book : ${shelf.books}"
+                   th:href="@{/books/{id}(id=${book.id})}"
+                   class="book-card">
+                    <div th:if="${!book.images.empty}">
+                        <img th:src="@{/images/{bookId}/cover(bookId=${book.id})}"
+                             th:alt="${book.title}"
+                             class="book-cover" />
+                    </div>
+                    <div th:if="${book.images.empty}"
+                         style="width: 100%; height: 280px; background-color: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 4px;">
+                        <span style="font-size: 3em;">📖</span>
+                    </div>
+                    <div class="book-title" th:text="${book.title ?: 'Untitled'}">Book Title</div>
+                    <div class="book-authors" th:text="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : ''}">Authors</div>
+                </a>
+            </div>
+        </div>
+
+        <footer>
+            <p>Bookworm - Home Library System</p>
+        </footer>
+    </div>
+</body>
+
+</html>

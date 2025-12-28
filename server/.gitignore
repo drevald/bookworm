@@ -1,0 +1,16 @@
+.env
+.env.local
+*.env
+!.env.example
+
+# Tesseract language data files (large files, download separately)
+tessdata/*.traineddata
+
+.gradle
+.claude
+bin
+build
+__pycache__
+.pytest_cache
+.venv
+.vscode
