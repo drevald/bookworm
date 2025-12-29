@@ -153,8 +153,12 @@ def extract_author(ocr):
     if biblio and biblio['author']:
         return biblio['author']
 
-    # Fallback patterns
+    # Fallback patterns (ordered by priority)
     patterns = [
+        # HIGHEST PRIORITY: Author directly before catalog code (e.g., "Чернин А. Д.\nА-49 Звезды")
+        # This avoids matching reviewers/editors listed elsewhere
+        # Allow multiple newlines/whitespace between author and catalog code
+        r'([А-ЯЁ][а-яё]+\s+[А-ЯЁA-Z]\.\s?[А-ЯЁA-Z]\.)\s*[\n\s]+[А-ЯЁA-Z][\d-]+\s',
         # Matches: Николаева A.H. or Николаева А.Н. (Cyrillic or Latin initials)
         r'[А-ЯЁ][а-яё]+\s+[А-ЯЁA-Z]\.\s?[А-ЯЁA-Z]\.',
         # Matches: Куваев, Олег or Фамилия, Имя Отчество
@@ -464,6 +468,10 @@ def normalize_author_title(data):
         # Split on colon and take only the first part
         title_parts = re.split(r'\s*:\s*', data["title"], maxsplit=1)
         data["title"] = title_parts[0].strip()
+
+        # Strip GOST location abbreviations (e.g., ". — М.", ". — СПб.", ". — Л.")
+        # Pattern: period + em-dash + 1-4 capital/lowercase Cyrillic letters + period + optional rest
+        data["title"] = re.sub(r'\.\s*—\s*[А-ЯЁ][а-яё]{0,3}\..*$', '', data["title"]).strip()
 
     # Extract author from title if embedded
     m = re.match(r'^([А-ЯЁ][а-яё]+),\s*([А-ЯЁ][а-яё]+)\.\s*[—-]\s*(.+)', data.get("title", ""))
