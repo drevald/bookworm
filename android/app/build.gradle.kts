@@ -64,6 +64,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
+    // OpenCV for document edge detection and perspective correction
+    implementation("org.opencv:opencv:4.8.0")
+
     // gRPC
     implementation("io.grpc:grpc-okhttp:1.60.0")
     implementation("io.grpc:grpc-protobuf-lite:1.60.0")

@@ -39,14 +39,15 @@ class BookRepository(
     }
 
     suspend fun deleteAllSentBooks() {
-        // Get all books with SENT or PROCESSED status
+        // Get all books with PROCESSED status (successfully uploaded and processed)
+        // Don't delete SENT books in case upload failed
         val allBooks = bookDao.getAllBooksSync()
-        val sentBooks = allBooks.filter {
-            it.status == BookStatus.SENT || it.status == BookStatus.PROCESSED
+        val processedBooks = allBooks.filter {
+            it.status == BookStatus.PROCESSED
         }
 
-        // Delete each sent book
-        sentBooks.forEach { book ->
+        // Delete each processed book
+        processedBooks.forEach { book ->
             deleteBook(book.id)
         }
     }

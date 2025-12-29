@@ -18,7 +18,7 @@
         <main>
             <div class="books-header">
                 <h2>All Books</h2>
-                <span class="book-count" th:text="${books.size()} + ' books'">0 books</span>
+                <span class="book-count" th:text="${totalItems} + ' books total'">0 books</span>
             </div>
 
             <div th:if="${books.empty}" class="empty-state">
@@ -50,6 +50,21 @@
                         </div>
                     </a>
                 </div>
+            </div>
+
+            <!-- Pagination -->
+            <div th:if="${totalPages > 1}" class="pagination">
+                <a th:if="${currentPage > 0}"
+                   th:href="@{/(page=${currentPage - 1}, size=${pageSize})}"
+                   class="page-link">← Previous</a>
+
+                <span class="page-info">
+                    Page <span th:text="${currentPage + 1}">1</span> of <span th:text="${totalPages}">1</span>
+                </span>
+
+                <a th:if="${currentPage < totalPages - 1}"
+                   th:href="@{/(page=${currentPage + 1}, size=${pageSize})}"
+                   class="page-link">Next →</a>
             </div>
         </main>
 

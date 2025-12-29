@@ -15,16 +15,15 @@ client = TestClient(app)
 
 # Test data directory structure:
 # test_data/
-#   ├── book_one/
-#   │   ├── cover.jpg
-#   │   ├── info.jpg
-#   │   ├── back.jpg
-#   │   └── expected.json
-#   ├── book_two/
-#   │   ├── cover.jpg
-#   │   ├── info.jpg
-#   │   ├── back.jpg
-#   │   └── expected.json
+#   ├── eng/
+#   │   └── potter/
+#   │       ├── cover.jpg
+#   │       ├── info.jpg
+#   │       └── expected.json
+#   └── rus/
+#       ├── doroga/
+#       ├── zvezdy/
+#       └── territory/
 
 TEST_DATA_DIR = Path(__file__).parent / "test_data"
 
@@ -36,10 +35,20 @@ def load_image_as_base64(image_path: Path) -> str:
 
 
 def get_book_test_cases():
-    """Find all book test directories"""
+    """Find all book test directories organized by language"""
     if not TEST_DATA_DIR.exists():
         return []
-    return [d for d in TEST_DATA_DIR.iterdir() if d.is_dir()]
+
+    test_cases = []
+    # Look for language directories (eng, rus, etc.)
+    for lang_dir in TEST_DATA_DIR.iterdir():
+        if lang_dir.is_dir():
+            # Look for book directories within each language
+            for book_dir in lang_dir.iterdir():
+                if book_dir.is_dir() and (book_dir / "expected.json").exists():
+                    test_cases.append((lang_dir.name, book_dir))
+
+    return test_cases
 
 
 def find_image(book_dir: Path, base_name: str) -> Path:
@@ -102,13 +111,18 @@ def normalize_classification(value) -> str:
     return normalized
 
 
-@pytest.mark.parametrize("book_dir", get_book_test_cases(), ids=lambda d: d.name)
-def test_extract_metadata(book_dir):
-    """Test metadata extraction for each book"""
+@pytest.mark.parametrize(
+    "lang_and_book",
+    get_book_test_cases(),
+    ids=lambda t: f"{t[0]}/{t[1].name}"
+)
+def test_extract_metadata(lang_and_book):
+    """Test metadata extraction for each book with correct language"""
+    language, book_dir = lang_and_book
     expected_file = book_dir / "expected.json"
 
-    # Prepare request - use default language (pure rus)
-    request_data = {}
+    # Prepare request with language from directory structure
+    request_data = {"language": language}
     info_images = []
 
     # Load cover image

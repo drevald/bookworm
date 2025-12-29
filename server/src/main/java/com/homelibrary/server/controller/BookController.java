@@ -7,6 +7,10 @@ import com.homelibrary.server.service.BookProcessingService;
 import com.homelibrary.server.service.ImageProcessingService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -40,11 +44,23 @@ public class BookController {
     private static final int MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
     @GetMapping("/")
-    public String listBooks(Model model) {
-        List<Book> books = bookRepository.findAll();
+    public String listBooks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Model model
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Page<Book> bookPage = bookRepository.findAll(pageable);
+
         // Force initialization of images while in transaction (fixes LOB access error)
-        books.forEach(b -> b.getImages().size());
-        model.addAttribute("books", books);
+        bookPage.getContent().forEach(b -> b.getImages().size());
+
+        model.addAttribute("books", bookPage.getContent());
+        model.addAttribute("currentPage", page);
+        model.addAttribute("totalPages", bookPage.getTotalPages());
+        model.addAttribute("totalItems", bookPage.getTotalElements());
+        model.addAttribute("pageSize", size);
+
         return "books";
     }
 

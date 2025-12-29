@@ -283,6 +283,42 @@ header h1 {
     color: var(--text-primary);
 }
 
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+    margin: 40px 0;
+    padding: 20px;
+}
+
+.page-link {
+    display: inline-block;
+    padding: 10px 20px;
+    background: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.page-link:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+}
+
+.page-info {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+}
+
+.page-info span {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
 /* Footer */
 footer {
     text-align: center;

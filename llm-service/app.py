@@ -201,7 +201,7 @@ def extract_isbn(ocr):
 
 def extract_udk(ocr):
     """Extract UDK code from OCR text"""
-    m = re.search(r'УДК\s*[:.]?\s*([\d.\s:()+=-]+)', ocr)
+    m = re.search(r'УДК\s*[:.]?\s*([\d.\s:()+=/\-]+)', ocr)
     if m:
         # Clean up spaces but preserve structure
         return re.sub(r'\s+', ' ', m.group(1).strip())
@@ -210,8 +210,8 @@ def extract_udk(ocr):
 def extract_bbk(ocr):
     """Extract BBK code from OCR text"""
     # BBK can start with Cyrillic letter (e.g., Ч84) or digit (e.g., 22.3)
-    # Allow Cyrillic letters, digits, and special chars
-    m = re.search(r'ББК\s*[:.]?\s*([А-ЯЁа-яёA-Za-z\d][\d\(\)=:А-ЯЁа-яёA-Za-z.\-–\s]+)', ocr)
+    # Allow Cyrillic letters, digits, and special chars including comma
+    m = re.search(r'ББК\s*[:.]?\s*([А-ЯЁа-яёA-Za-z\d][\d\(\)=:,А-ЯЁа-яёA-Za-z.\-–\s]+)', ocr)
     if m:
         # Clean up but preserve Cyrillic
         result = m.group(1).strip()
@@ -459,17 +459,7 @@ def normalize_author_title(data):
         if any(keyword in title_lower for keyword in garbage_keywords):
             data["title"] = "unknown"
 
-    # Strip GOST classification codes (e.g., "B 68 Title" -> "Title")
-    if data.get("title") and data["title"] != "unknown":
-        title = re.sub(r'^[A-ZА-Я]\s+\d+\s+', '', data["title"])
-        data["title"] = title.strip()
-
-    # Strip publishing info after em-dash (e.g., "Title. — Publisher, Year" -> "Title")
-    if data.get("title") and data["title"] != "unknown":
-        title_parts = re.split(r'\s*—\s*', data["title"], maxsplit=1)
-        data["title"] = title_parts[0].strip().rstrip('.')
-
-    # Strip subtitle/translation info after colon
+    # Strip subtitle/translation info after colon (e.g., "Title : Translation" -> "Title")
     if data.get("title") and data["title"] != "unknown":
         # Split on colon and take only the first part
         title_parts = re.split(r'\s*:\s*', data["title"], maxsplit=1)
