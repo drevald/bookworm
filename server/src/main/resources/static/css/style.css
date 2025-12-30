@@ -252,7 +252,7 @@ header h1 {
 }
 
 .detail-info h2 {
-    font-size: 2rem;
+    font-size: 0.8rem;
     margin-bottom: 24px;
     color: var(--text-primary);
 }
@@ -334,7 +334,7 @@ footer {
     }
 
     header h1 {
-        font-size: 2rem;
+        font-size: 0.8rem;
     }
 
     .books-header {
@@ -362,4 +362,116 @@ footer {
         grid-template-columns: 1fr;
         gap: 4px;
     }
+}
+
+/* View toggle buttons */
+.books-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.view-toggle {
+    display: flex;
+    gap: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.view-btn {
+    padding: 0.5rem 1rem;
+    background: white;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    color: #333;
+    font-size: 1.2rem;
+}
+
+.view-btn:hover {
+    background: #f0f0f0;
+}
+
+.view-btn.active {
+    background: #007bff;
+    color: white;
+}
+
+/* Table view styles */
+.books-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 2rem;
+    background: white;
+}
+
+.books-table th {
+    background: #f8f9fa;
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+}
+
+.books-table td {
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+    vertical-align: middle;
+}
+
+.books-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.table-thumbnail {
+    width: 100px;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.table-placeholder {
+    font-size: 0.8rem;
+}
+
+.thumbnail-cell {
+    width: 40px;
+    text-align: center;
+}
+
+.title-cell a {
+    text-decoration: none;
+    color: #007bff;
+    font-weight: 500;
+}
+
+.title-cell a:hover {
+    text-decoration: underline;
+}
+
+.author-cell {
+    color: #495057;
+}
+
+.publisher-cell {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.year-cell {
+    color: #6c757d;
+    width: 80px;
+}
+
+.text-muted {
+    color: #adb5bd;
+    font-style: italic;
 }

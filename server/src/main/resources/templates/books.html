@@ -18,14 +18,25 @@
         <main>
             <div class="books-header">
                 <h2>All Books</h2>
-                <span class="book-count" th:text="${totalItems} + ' books total'">0 books</span>
+                <div class="header-actions">
+                    <span class="book-count" th:text="${totalItems} + ' books total'">0 books</span>
+                    <div class="view-toggle">
+                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='grid')}"
+                           th:class="${view == 'grid' or view == null} ? 'view-btn active' : 'view-btn'"
+                           title="Grid view">⊞</a>
+                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='table')}"
+                           th:class="${view == 'table'} ? 'view-btn active' : 'view-btn'"
+                           title="Table view">☰</a>
+                    </div>
+                </div>
             </div>
 
             <div th:if="${books.empty}" class="empty-state">
                 <p>No books uploaded yet. Start by capturing some book covers with the mobile app!</p>
             </div>
 
-            <div class="books-grid" th:unless="${books.empty}">
+            <!-- Grid View -->
+            <div class="books-grid" th:if="${!books.empty and (view == 'grid' or view == null)}">
                 <div class="book-card" th:each="book : ${books}">
                     <a th:href="@{/books/{id}(id=${book.id})}" class="book-link">
                         <div class="book-cover">
@@ -52,10 +63,54 @@
                 </div>
             </div>
 
+            <!-- Table View -->
+            <table class="books-table" th:if="${!books.empty and view == 'table'}">
+                <thead>
+                    <tr>
+                        <th>Cover</th>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Publisher</th>
+                        <th>Year</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="book : ${books}">
+                        <td class="thumbnail-cell">
+                            <a th:href="@{/books/{id}(id=${book.id})}">
+                                <img th:if="${!book.images.empty}"
+                                     th:src="@{/images/{bookId}/cover(bookId=${book.id})}"
+                                     th:alt="${book.title}"
+                                     class="table-thumbnail" />
+                                <span th:if="${book.images.empty}" class="table-placeholder">📖</span>
+                            </a>
+                        </td>
+                        <td class="title-cell">
+                            <a th:href="@{/books/{id}(id=${book.id})}" th:text="${book.title}">Title</a>
+                        </td>
+                        <td class="author-cell">
+                            <span th:if="${!book.authors.empty}"
+                                  th:text="${#strings.listJoin(book.authors.![name], ', ')}">Authors</span>
+                            <span th:if="${book.authors.empty}" class="text-muted">—</span>
+                        </td>
+                        <td class="publisher-cell">
+                            <span th:if="${book.publisher != null}"
+                                  th:text="${book.publisher.name}">Publisher</span>
+                            <span th:if="${book.publisher == null}" class="text-muted">—</span>
+                        </td>
+                        <td class="year-cell">
+                            <span th:if="${book.publicationYear != null}"
+                                  th:text="${book.publicationYear}">Year</span>
+                            <span th:if="${book.publicationYear == null}" class="text-muted">—</span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
             <!-- Pagination -->
             <div th:if="${totalPages > 1}" class="pagination">
                 <a th:if="${currentPage > 0}"
-                   th:href="@{/(page=${currentPage - 1}, size=${pageSize})}"
+                   th:href="@{/(page=${currentPage - 1}, size=${pageSize}, view=${view})}"
                    class="page-link">← Previous</a>
 
                 <span class="page-info">
@@ -63,7 +118,7 @@
                 </span>
 
                 <a th:if="${currentPage < totalPages - 1}"
-                   th:href="@{/(page=${currentPage + 1}, size=${pageSize})}"
+                   th:href="@{/(page=${currentPage + 1}, size=${pageSize}, view=${view})}"
                    class="page-link">Next →</a>
             </div>
         </main>

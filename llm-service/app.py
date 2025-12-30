@@ -141,6 +141,43 @@ def ocr_image_rgb_channels(image: Image.Image, lang: str) -> str:
 # REGEX EXTRACTION (DETERMINISTIC HINTS)
 # ========================================
 
+def ocr_with_vision_fallback(image: Image.Image, tesseract_result: str) -> str:
+    """
+    Use Ollama vision model as fallback when Tesseract fails or gets poor results.
+    Returns vision model OCR if available, otherwise returns original tesseract_result.
+    """
+    # If Tesseract got decent results (>20 chars), use them
+# Check if OCR result is poor quality (short, or has noise characters)    result_len = len(tesseract_result.strip())    has_noise = any(c in tesseract_result[:20] for c in ["|", ";", "@", "#", "ufffd"])        if result_len > 50 and not has_noise:        return tesseract_result        logger.info(f"Tesseract result poor (len={result_len}, noise={has_noise}), trying vision model...")
+    
+    try:
+        # Convert image to base64
+        buffered = io.BytesIO()
+        image.save(buffered, format="PNG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Call Ollama vision API
+        vision_url = f"{OLLAMA_URL}/api/generate"
+        payload = {
+            "model": "qwen3-vl:8b",
+            "prompt": "Extract all visible text from this image exactly as it appears. Include titles, author names, publisher, year, ISBN, and any other text.",
+            "images": [img_b64],
+            "stream": False
+        }
+        
+        response = requests.post(vision_url, json=payload, timeout=90)
+        if response.status_code == 200:
+            result = response.json()
+            vision_text = result.get("response", "")
+            if len(vision_text.strip()) > len(tesseract_result.strip()):
+                logger.info(f"Vision model got better result: {len(vision_text.strip())} chars vs {len(tesseract_result.strip())} chars")
+                return vision_text
+        else:
+            logger.warning(f"Vision model failed: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Vision OCR fallback error: {e}")
+    
+    # Return original if vision model failed
+    return tesseract_result
 def extract_author(ocr):
     """Extract author name from OCR text using patterns"""
     # Try English format first
@@ -182,7 +219,8 @@ def normalize_author(author):
 
 def extract_isbn(ocr):
     """Extract ISBN from OCR text"""
-    m = re.search(r'ISBN\s*[:]? ?([0-9Xx\-\–\—\−\s]+)', ocr, re.IGNORECASE)
+    # Stop at opening parenthesis or other non-ISBN chars
+    m = re.search(r'ISBN\s*[:]? ?([0-9Xx\-\–\—\−\s]+?)(?:\s*[\(;,]|$)', ocr, re.IGNORECASE)
     if not m:
         return "unknown"
 
@@ -265,6 +303,7 @@ def extract_english_bibliographic_entry(ocr):
                 'year': year
             }
 
+# Try extracting from copyright/trademark line    # e.g., "Harry Potter, names, characters and related indicia are"    copyright_match = re.search(r"([A-Z][A-Za-z]+(?:s+[A-Z][A-Za-z]+)+),s+names?,s+characters?", ocr)    if copyright_match:        return {"title": copyright_match.group(1), "author": "unknown", "publisher": "unknown", "year": 0}
     return None
 
 def extract_bibliographic_entry(ocr):
@@ -463,15 +502,25 @@ def normalize_author_title(data):
         if any(keyword in title_lower for keyword in garbage_keywords):
             data["title"] = "unknown"
 
-    # Strip subtitle/translation info after colon (e.g., "Title : Translation" -> "Title")
+    # Clean up title from GOST bibliographic format
     if data.get("title") and data["title"] != "unknown":
-        # Split on colon and take only the first part
-        title_parts = re.split(r'\s*:\s*', data["title"], maxsplit=1)
-        data["title"] = title_parts[0].strip()
+        title = data["title"]
 
-        # Strip GOST location abbreviations (e.g., ". — М.", ". — СПб.", ". — Л.")
-        # Pattern: period + em-dash + 1-4 capital/lowercase Cyrillic letters + period + optional rest
-        data["title"] = re.sub(r'\.\s*—\s*[А-ЯЁ][а-яё]{0,3}\..*$', '', data["title"]).strip()
+        # Remove GOST catalog codes at the beginning (e.g., "B 68 ", "М68 ", "А-49 ")
+        title = re.sub(r'^[А-ЯЁA-Z][\s\-]*\d+\s+', '', title)
+
+        # Remove everything after " / " (author/translator info)
+        # e.g., "Змеи /К. Маттисон; Пер. сангл. Т. Ю. Чугунова. — М.:..."
+        title = re.split(r'\s*/\s*', title)[0]
+
+        # Remove everything after ". —" (location, publisher, year, pages)
+        # e.g., "Видения страшного суда. — М.: Изд-во ЭКСМО-Пресс, 2002"
+        title = re.split(r'\.\s*—\s*', title)[0]
+
+        # Strip subtitle/translation info after colon (e.g., "Title : Translation" -> "Title")
+        title = re.split(r'\s*:\s*', title, maxsplit=1)[0]
+
+        data["title"] = title.strip()
 
     # Extract author from title if embedded
     m = re.match(r'^([А-ЯЁ][а-яё]+),\s*([А-ЯЁ][а-яё]+)\.\s*[—-]\s*(.+)', data.get("title", ""))
@@ -486,6 +535,38 @@ def normalize_strings(data):
         if isinstance(v, str):
             data[k] = " ".join(v.split())
 
+
+def normalize_old_cyrillic(text: str) -> str:
+    """Convert pre-1918 Russian orthography to modern Cyrillic
+    
+    Common old letters:
+    - Ѣ (yat) → Е
+    - І (i decimal) → И  
+    - Ѵ (izhitsa) → И
+    - Ѳ (fita) → Ф
+    - Ъ at end of words → remove
+    """
+    if not text:
+        return text
+    
+    # Replace old Cyrillic letters
+    text = text.replace('Ѣ', 'Е').replace('ѣ', 'е')
+    text = text.replace('І', 'И').replace('і', 'и')
+    text = text.replace('Ѵ', 'И').replace('ѵ', 'и')
+    text = text.replace('Ѳ', 'Ф').replace('ѳ', 'ф')
+    
+    # Remove hard sign at end of words
+    import re
+    text = re.sub(r'Ъ\b', '', text)
+    text = re.sub(r'ъ\b', '', text)
+    
+    return text
+
+def normalize_old_cyrillic_data(data):
+    """Apply old Cyrillic normalization to all text fields"""
+    for key in ['title', 'author', 'publisher']:
+        if data.get(key) and data[key] != "unknown":
+            data[key] = normalize_old_cyrillic(data[key])
 def clean_annotation(text: str) -> str:
     """Clean OCR annotation: remove line breaks, duplicates"""
     if not text:
@@ -530,6 +611,26 @@ def finalize(data, isbn_hint, udk_hint, bbk_hint):
     # Normalize classification codes
     data["bbk"] = normalize_classification(data.get("bbk"))
     data["udk"] = normalize_classification(data.get("udk"))
+
+    # Normalize ISBN (remove publisher names in parentheses, validate format)
+    isbn = data.get("isbn", "unknown")
+    if isbn != "unknown":
+        # Remove everything after opening parenthesis, semicolon, or comma
+        isbn = re.split(r'\s*[\(;,]', isbn)[0].strip()
+        # Keep only digits, dashes, and X
+        clean_isbn = re.sub(r'[^0-9Xx\-]', '', isbn).upper()
+        # Remove dashes for validation
+        digits_only = re.sub(r'[^0-9Xx]', '', clean_isbn).upper()
+        # Validate: must be 10 or 13 digits (X only allowed as last char in ISBN-10)
+        if len(digits_only) == 10:
+            if digits_only.isdigit() or (digits_only[-1] == 'X' and digits_only[:-1].isdigit()):
+                data["isbn"] = clean_isbn
+            else:
+                data["isbn"] = "unknown"
+        elif len(digits_only) == 13 and digits_only.isdigit():
+            data["isbn"] = clean_isbn
+        else:
+            data["isbn"] = "unknown"
 
     # Clean annotation
     data["annotation"] = clean_annotation(data.get("annotation", "unknown"))
@@ -601,6 +702,7 @@ def extract_cover_metadata(ocr_text: str) -> dict:
         # Normalize
         normalize_author_title(data)
         normalize_strings(data)
+        normalize_old_cyrillic_data(data)
 
         return {
             "title": data.get("title", "unknown"),
@@ -648,6 +750,7 @@ def extract_metadata_with_llm(ocr_main: str, ocr_eng: str = "") -> dict:
         data = json.loads(clean_json)
         normalize_author_title(data)
         normalize_strings(data)
+        normalize_old_cyrillic_data(data)
         finalize(data, isbn_hint, udk_hint, bbk_hint)
 
         return data
@@ -666,6 +769,9 @@ def extract_metadata_with_llm(ocr_main: str, ocr_eng: str = "") -> dict:
             "bbk": bbk_hint if bbk_hint != "unknown" else "unknown",
             "annotation": "unknown"
         }
+        normalize_author_title(data)
+        normalize_strings(data)
+        normalize_old_cyrillic_data(data)
         finalize(data, isbn_hint, udk_hint, bbk_hint)
         return data
 
@@ -718,7 +824,7 @@ async def extract_metadata(req: OCRRequest):
         if req.cover_image:
             cover_img = image_from_base64(req.cover_image)
             ocr_eng += "=== COVER ===\n" + ocr_image(cover_img, "eng") + "\n"
-            ocr_cover = ocr_image_rgb_channels(cover_img, req.language)
+            ocr_cover = ocr_with_vision_fallback(cover_img, ocr_image_rgb_channels(cover_img, req.language))
 
         # Process info pages
         for i, b64 in enumerate(req.info_images or [], 1):
