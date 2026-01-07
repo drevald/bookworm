@@ -2,10 +2,15 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/action_change_shelf"
+        android:icon="@android:drawable/ic_menu_sort_by_size"
+        android:title="Change Shelf"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/action_shelves"
         android:icon="@android:drawable/ic_menu_gallery"
         android:title="Manage Shelves"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/action_cleanup"
         android:icon="@android:drawable/ic_menu_delete"

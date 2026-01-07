@@ -9,18 +9,31 @@ class BookRepository(
 ) {
     // Book operations
     fun getAllBooks(): Flow<List<BookEntity>> = bookDao.getAllBooks()
-    
+
     fun getAllBooksWithPages(): Flow<List<BookWithPages>> = bookDao.getAllBooksWithPages()
+
+    /**
+     * Get books filtered by shelf.
+     * @param shelfId null for all books, -1L for books without shelf, or specific shelf ID
+     */
+    fun getBooksWithPages(shelfId: Long?): Flow<List<BookWithPages>> {
+        return when (shelfId) {
+            null -> bookDao.getAllBooksWithPages()
+            -1L -> bookDao.getBooksWithoutShelf()
+            else -> bookDao.getBooksByShelf(shelfId)
+        }
+    }
 
     suspend fun getBookById(bookId: Long): BookEntity? = bookDao.getBookById(bookId)
 
     suspend fun getBookWithPages(bookId: Long): BookWithPages? = bookDao.getBookWithPages(bookId)
 
-    suspend fun createBook(clientRefId: String): Long {
+    suspend fun createBook(clientRefId: String, shelfId: Long? = null): Long {
         val book = BookEntity(
             clientRefId = clientRefId,
             status = BookStatus.PENDING,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            shelfId = shelfId
         )
         return bookDao.insertBook(book)
     }

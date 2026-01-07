@@ -71,4 +71,12 @@ interface BookDao {
     @Transaction
     @Query("SELECT * FROM books ORDER BY createdAt DESC")
     fun getAllBooksWithPages(): Flow<List<BookWithPages>>
+
+    @Transaction
+    @Query("SELECT * FROM books WHERE shelfId = :shelfId ORDER BY createdAt DESC")
+    fun getBooksByShelf(shelfId: Long): Flow<List<BookWithPages>>
+
+    @Transaction
+    @Query("SELECT * FROM books WHERE shelfId IS NULL ORDER BY createdAt DESC")
+    fun getBooksWithoutShelf(): Flow<List<BookWithPages>>
 }

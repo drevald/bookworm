@@ -47,9 +47,17 @@ public class BookController {
     public String listBooks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String view,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
             Model model
     ) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        // Build sort object based on parameters
+        Sort sort = sortDir.equalsIgnoreCase("asc")
+            ? Sort.by(sortBy).ascending()
+            : Sort.by(sortBy).descending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
         Page<Book> bookPage = bookRepository.findAll(pageable);
 
         // Force initialization of images while in transaction (fixes LOB access error)
@@ -60,6 +68,9 @@ public class BookController {
         model.addAttribute("totalPages", bookPage.getTotalPages());
         model.addAttribute("totalItems", bookPage.getTotalElements());
         model.addAttribute("pageSize", size);
+        model.addAttribute("view", view != null ? view : "grid");
+        model.addAttribute("sortBy", sortBy);
+        model.addAttribute("sortDir", sortDir);
 
         return "books";
     }
@@ -231,5 +242,100 @@ public class BookController {
         bookRepository.deleteById(id);
         log.info("Book deleted successfully, redirecting to books list");
         return "redirect:/";
+    }
+
+    @PostMapping("/books/bulk-delete")
+    public String bulkDeleteBooks(@RequestParam("ids") List<String> ids) {
+        log.info("Bulk deleting {} books", ids.size());
+        for (String id : ids) {
+            try {
+                UUID uuid = UUID.fromString(id);
+                bookRepository.deleteById(uuid);
+                log.info("Deleted book with ID: {}", uuid);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid UUID format: {}", id);
+            }
+        }
+        log.info("Bulk delete completed, redirecting to books list");
+        return "redirect:/";
+    }
+
+    @PostMapping("/books/bulk-reprocess")
+    public String bulkReprocessBooks(
+            @RequestParam("ids") List<String> ids,
+            @RequestParam(defaultValue = "rus") String language) {
+        log.info("Batch reprocessing {} books with language: {}", ids.size(), language);
+        for (String id : ids) {
+            try {
+                UUID uuid = UUID.fromString(id);
+                bookProcessingService.processBookAsync(uuid, language);
+                log.info("Started reprocessing book with ID: {}", uuid);
+            } catch (IllegalArgumentException e) {
+                log.error("Invalid UUID format: {}", id);
+            }
+        }
+        log.info("Batch reprocess initiated for {} books", ids.size());
+        return "redirect:/";
+    }
+
+    @GetMapping("/books/{id}/edit")
+    public String editBookForm(@PathVariable UUID id, Model model) {
+        Book book = bookRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Book not found"));
+        
+        model.addAttribute("book", book);
+        return "book-edit";
+    }
+
+    @PostMapping("/books/{id}/edit")
+    public String updateBook(
+            @PathVariable UUID id,
+            @RequestParam String title,
+            @RequestParam String author,
+            @RequestParam String publisher,
+            @RequestParam(required = false) Integer year,
+            @RequestParam String isbn,
+            @RequestParam String udk,
+            @RequestParam String bbk) {
+        
+        Book book = bookRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Book not found"));
+        
+        
+        // Update simple fields
+        book.setTitle(title);
+        book.setPublicationYear(year);
+        book.setIsbn(isbn.equals("unknown") || isbn.trim().isEmpty() ? null : isbn);
+        book.setUdk(udk.equals("unknown") || udk.trim().isEmpty() ? null : udk);
+        book.setBbk(bbk.equals("unknown") || bbk.trim().isEmpty() ? null : bbk);
+        
+        // Handle publisher
+        if (publisher.equals("unknown") || publisher.trim().isEmpty()) {
+            book.setPublisher(null);
+        } else {
+            if (book.getPublisher() == null) {
+                com.homelibrary.server.domain.Publisher pub = new com.homelibrary.server.domain.Publisher();
+                pub.setName(publisher);
+                book.setPublisher(pub);
+            } else {
+                book.getPublisher().setName(publisher);
+            }
+        }
+        
+        // Handle authors - clear and create new
+        book.getAuthors().clear();
+        if (!author.equals("unknown") && !author.trim().isEmpty()) {
+            String[] authorNames = author.split(",");
+            for (String authorName : authorNames) {
+                com.homelibrary.server.domain.Author authorEntity = new com.homelibrary.server.domain.Author();
+                authorEntity.setName(authorName.trim());
+                book.getAuthors().add(authorEntity);
+            }
+        }
+        
+        bookRepository.save(book);
+        log.info("Updated book {}", id);
+        
+        return "redirect:/books/" + id;
     }
 }

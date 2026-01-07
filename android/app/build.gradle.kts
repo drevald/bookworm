@@ -65,7 +65,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // OpenCV for document edge detection and perspective correction
-    implementation("org.opencv:opencv:4.8.0")
+    // TODO: Fix OpenCV dependency - incorrect Maven coordinate
+    // implementation("org.opencv:opencv:4.8.0")
 
     // gRPC
     implementation("io.grpc:grpc-okhttp:1.60.0")

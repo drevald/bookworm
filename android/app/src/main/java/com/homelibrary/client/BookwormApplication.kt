@@ -8,8 +8,9 @@ class BookwormApplication : Application() {
         super.onCreate()
 
         // Initialize OpenCV
-        if (!DocumentScanner.init()) {
-            Log.e("BookwormApplication", "Failed to initialize OpenCV")
-        }
+        // TODO: Re-enable when OpenCV dependency is fixed
+        // if (!DocumentScanner.init()) {
+        //     Log.e("BookwormApplication", "Failed to initialize OpenCV")
+        // }
     }
 }

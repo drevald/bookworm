@@ -5,6 +5,7 @@ import pytest
 import json
 import base64
 import re
+import time
 from pathlib import Path
 from fastapi.testclient import TestClient
 
@@ -12,6 +13,13 @@ from app import app
 from ocr import extract_isbn, ocr_image, image_from_base64
 
 client = TestClient(app)
+
+# Fixture to add delay between tests to prevent Ollama overload
+@pytest.fixture(autouse=True)
+def delay_between_tests():
+    """Add delay between tests to give Ollama time to recover"""
+    yield
+    time.sleep(3)  # 3 second delay after each test
 
 # Test data directory structure:
 # test_data/
@@ -111,6 +119,59 @@ def normalize_classification(value) -> str:
     return normalized
 
 
+def match_author_names(actual: str, expected: str) -> bool:
+    """
+    Match author names accepting both full names and initials.
+    Examples:
+    - "Бобров Ю. Г." matches "Бобров Юрий Георгиевич"
+    - "Петрова А.Б." matches "Петрова Анна Борисовна"
+    """
+    if actual is None or expected is None:
+        return actual == expected
+
+    # First try exact normalized match
+    if normalize_for_comparison(actual) == normalize_for_comparison(expected):
+        return True
+
+    # Extract surname and initials from both
+    def extract_surname_and_initials(name: str) -> tuple:
+        """Extract (surname, list of initials) from author name"""
+        parts = name.strip().split()
+        if not parts:
+            return None, []
+
+        surname = parts[0]
+        initials = []
+
+        for part in parts[1:]:
+            # Check if it's an initial (single letter possibly followed by dot)
+            clean = part.replace('.', '').replace(',', '').strip()
+            if len(clean) == 1:
+                initials.append(clean.upper())
+            elif len(clean) > 1:
+                # It's a full name, take first letter
+                initials.append(clean[0].upper())
+
+        return surname, initials
+
+    surname1, initials1 = extract_surname_and_initials(actual)
+    surname2, initials2 = extract_surname_and_initials(expected)
+
+    # Compare surnames (normalized)
+    if normalize_for_comparison(surname1) != normalize_for_comparison(surname2):
+        return False
+
+    # Compare initials
+    if len(initials1) != len(initials2):
+        return False
+
+    for i1, i2 in zip(initials1, initials2):
+        if normalize_for_comparison(i1) != normalize_for_comparison(i2):
+            return False
+
+    return True
+
+
 @pytest.mark.parametrize(
     "lang_and_book",
     get_book_test_cases(),
@@ -191,6 +252,8 @@ def test_extract_metadata(lang_and_book):
             matches = normalize_isbn(actual_val) == normalize_isbn(expected_val)
         elif field in ("UDK", "BBK"):
             matches = normalize_classification(actual_val) == normalize_classification(expected_val)
+        elif field == "Author":
+            matches = match_author_names(actual_val, expected_val)
         else:
             matches = normalize_for_comparison(actual_val) == normalize_for_comparison(expected_val)
 
@@ -203,7 +266,7 @@ def test_extract_metadata(lang_and_book):
     # Assertions - comparing normalized values (ignore case and spaces)
     assert normalize_for_comparison(actual["title"]) == normalize_for_comparison(expected["title"]), \
         f"Title mismatch: expected '{expected['title']}', got '{actual['title']}'"
-    assert normalize_for_comparison(actual["author"]) == normalize_for_comparison(expected["author"]), \
+    assert match_author_names(actual["author"], expected["author"]), \
         f"Author mismatch: expected '{expected['author']}', got '{actual['author']}'"
     assert normalize_isbn(actual["isbn"]) == normalize_isbn(expected["isbn"]), \
         f"ISBN mismatch: expected '{expected['isbn']}', got '{actual['isbn']}'"
@@ -242,12 +305,12 @@ def test_isbn_extraction():
 def test_dual_ocr_isbn_from_images():
     """Integration test: OCR real images with dual approach and extract ISBN"""
     # Find book test cases with images
-    book_dirs = get_book_test_cases()
+    book_cases = get_book_test_cases()
 
-    if not book_dirs:
+    if not book_cases:
         pytest.skip("No test images found in test_data/")
 
-    for book_dir in book_dirs:
+    for language, book_dir in book_cases:
         expected_file = book_dir / "expected.json"
         if not expected_file.exists():
             continue

@@ -378,6 +378,7 @@
         </main>
 
         <div style="display: flex; gap: 15px;">
+            <a th:href="@{/books/{id}/edit(id=${book.id})}" style="background-color: #6c757d; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block;">EDIT</a>
             <form th:action="@{/books/{id}/delete(id=${book.id})}" method="post" style="display: inline;" onsubmit="return confirmDelete()">
                 <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">DELETE</button>
             </form>

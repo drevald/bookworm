@@ -21,10 +21,10 @@
                 <div class="header-actions">
                     <span class="book-count" th:text="${totalItems} + ' books total'">0 books</span>
                     <div class="view-toggle">
-                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='grid')}"
+                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='grid', sortBy=${sortBy}, sortDir=${sortDir})}"
                            th:class="${view == 'grid' or view == null} ? 'view-btn active' : 'view-btn'"
                            title="Grid view">⊞</a>
-                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='table')}"
+                        <a th:href="@{/(page=${currentPage}, size=${pageSize}, view='table', sortBy=${sortBy}, sortDir=${sortDir})}"
                            th:class="${view == 'table'} ? 'view-btn active' : 'view-btn'"
                            title="Table view">☰</a>
                     </div>
@@ -64,18 +64,53 @@
             </div>
 
             <!-- Table View -->
-            <table class="books-table" th:if="${!books.empty and view == 'table'}">
+            <div th:if="${!books.empty and view == 'table'}">
+                <div class="table-actions">
+                    <button id="reprocessSelectedBtn" class="btn-reprocess" onclick="reprocessSelected()" disabled>
+                        Reprocess Selected (<span id="selectedCountReprocess">0</span>)
+                    </button>
+                    <button id="deleteSelectedBtn" class="btn-delete" onclick="deleteSelected()" disabled>
+                        Delete Selected (<span id="selectedCount">0</span>)
+                    </button>
+                </div>
+                <table class="books-table">
                 <thead>
                     <tr>
+                        <th class="checkbox-cell">
+                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                        </th>
                         <th>Cover</th>
-                        <th>Title</th>
-                        <th>Author</th>
-                        <th>Publisher</th>
-                        <th>Year</th>
+                        <th class="sortable">
+                            <a th:href="@{/(page=0, size=${pageSize}, view='table', sortBy='title', sortDir=${sortBy == 'title' and sortDir == 'asc' ? 'desc' : 'asc'})}">
+                                Title
+                                <span th:if="${sortBy == 'title'}" th:text="${sortDir == 'asc' ? '↑' : '↓'}"></span>
+                            </a>
+                        </th>
+                        <th class="sortable">
+                            <a th:href="@{/(page=0, size=${pageSize}, view='table', sortBy='authors', sortDir=${sortBy == 'authors' and sortDir == 'asc' ? 'desc' : 'asc'})}">
+                                Author
+                                <span th:if="${sortBy == 'authors'}" th:text="${sortDir == 'asc' ? '↑' : '↓'}"></span>
+                            </a>
+                        </th>
+                        <th class="sortable">
+                            <a th:href="@{/(page=0, size=${pageSize}, view='table', sortBy='publisher', sortDir=${sortBy == 'publisher' and sortDir == 'asc' ? 'desc' : 'asc'})}">
+                                Publisher
+                                <span th:if="${sortBy == 'publisher'}" th:text="${sortDir == 'asc' ? '↑' : '↓'}"></span>
+                            </a>
+                        </th>
+                        <th class="sortable">
+                            <a th:href="@{/(page=0, size=${pageSize}, view='table', sortBy='publicationYear', sortDir=${sortBy == 'publicationYear' and sortDir == 'asc' ? 'desc' : 'asc'})}">
+                                Year
+                                <span th:if="${sortBy == 'publicationYear'}" th:text="${sortDir == 'asc' ? '↑' : '↓'}"></span>
+                            </a>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr th:each="book : ${books}">
+                        <td class="checkbox-cell">
+                            <input type="checkbox" class="book-checkbox" th:value="${book.id}" onchange="updateDeleteButton()">
+                        </td>
                         <td class="thumbnail-cell">
                             <a th:href="@{/books/{id}(id=${book.id})}">
                                 <img th:if="${!book.images.empty}"
@@ -105,12 +140,13 @@
                         </td>
                     </tr>
                 </tbody>
-            </table>
+                </table>
+            </div>
 
             <!-- Pagination -->
             <div th:if="${totalPages > 1}" class="pagination">
                 <a th:if="${currentPage > 0}"
-                   th:href="@{/(page=${currentPage - 1}, size=${pageSize}, view=${view})}"
+                   th:href="@{/(page=${currentPage - 1}, size=${pageSize}, view=${view}, sortBy=${sortBy}, sortDir=${sortDir})}"
                    class="page-link">← Previous</a>
 
                 <span class="page-info">
@@ -118,7 +154,7 @@
                 </span>
 
                 <a th:if="${currentPage < totalPages - 1}"
-                   th:href="@{/(page=${currentPage + 1}, size=${pageSize}, view=${view})}"
+                   th:href="@{/(page=${currentPage + 1}, size=${pageSize}, view=${view}, sortBy=${sortBy}, sortDir=${sortDir})}"
                    class="page-link">Next →</a>
             </div>
         </main>
@@ -127,6 +163,98 @@
             <p>Bookworm - Home Library System</p>
         </footer>
     </div>
+
+    <script>
+        function toggleSelectAll(checkbox) {
+            const checkboxes = document.querySelectorAll('.book-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = checkbox.checked;
+            });
+            updateDeleteButton();
+        }
+
+        function updateDeleteButton() {
+            const checkboxes = document.querySelectorAll('.book-checkbox:checked');
+            const deleteBtn = document.getElementById('deleteSelectedBtn');
+            const reprocessBtn = document.getElementById('reprocessSelectedBtn');
+            const countSpan = document.getElementById('selectedCount');
+            const countSpanReprocess = document.getElementById('selectedCountReprocess');
+            
+            const count = checkboxes.length;
+            countSpan.textContent = count;
+            countSpanReprocess.textContent = count;
+            deleteBtn.disabled = count === 0;
+            reprocessBtn.disabled = count === 0;
+            
+            // Update "select all" checkbox state
+            const allCheckboxes = document.querySelectorAll('.book-checkbox');
+            const selectAllCheckbox = document.getElementById('selectAll');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = count === allCheckboxes.length && count > 0;
+            }
+        }
+
+        function deleteSelected() {
+            const checkboxes = document.querySelectorAll('.book-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (ids.length === 0) return;
+            
+            if (!confirm(`Are you sure you want to delete ${ids.length} book(s)?`)) {
+                return;
+            }
+            
+            // Create form and submit
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/books/bulk-delete';
+            
+            ids.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ids';
+                input.value = id;
+                form.appendChild(input);
+            });
+            
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function reprocessSelected() {
+            const checkboxes = document.querySelectorAll('.book-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (ids.length === 0) return;
+            
+            if (!confirm(`Reprocess ${ids.length} book(s) with OCR? This may take a while.`)) {
+                return;
+            }
+            
+            // Create form and submit
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/books/bulk-reprocess';
+            
+            ids.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ids';
+                input.value = id;
+                form.appendChild(input);
+            });
+            
+            // Add language parameter (default: rus)
+            const langInput = document.createElement('input');
+            langInput.type = 'hidden';
+            langInput.name = 'language';
+            langInput.value = 'rus';
+            form.appendChild(langInput);
+            
+            document.body.appendChild(form);
+            form.submit();
+        }
+    </script>
 </body>
 
 </html>

@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # OLLAMA CONFIGURATION
 # ========================================
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.134:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.189:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_COMPLETIONS_URL = f"{OLLAMA_URL}/v1/completions"
 
@@ -158,8 +158,8 @@ def ocr_with_vision_fallback(image: Image.Image, tesseract_result: str) -> str:
         # Call Ollama vision API
         vision_url = f"{OLLAMA_URL}/api/generate"
         payload = {
-            "model": "qwen3-vl:8b",
-            "prompt": "Extract all visible text from this image exactly as it appears. Include titles, author names, publisher, year, ISBN, and any other text.",
+            "model": "qwen2.5vl:7b",
+            "prompt": "Extract ALL visible text from this book page/cover image EXACTLY as it appears, preserving the original language (including Cyrillic/Russian characters). Do not translate. Include: book title, author name, publisher, year, ISBN, UDK, BBK, and any other text. Output the text exactly as shown in the image.",
             "images": [img_b64],
             "stream": False
         }
@@ -690,7 +690,7 @@ def extract_cover_metadata(ocr_text: str) -> dict:
                 "max_tokens": 200,
                 "temperature": 0
             },
-            timeout=30
+            timeout=90
         )
         response.raise_for_status()
         result_text = response.json()["choices"][0]["text"]
@@ -740,7 +740,7 @@ def extract_metadata_with_llm(ocr_main: str, ocr_eng: str = "") -> dict:
                 "max_tokens": 800,  # Increased from 400 to allow full response
                 "temperature": 0
             },
-            timeout=60
+            timeout=90
         )
         response.raise_for_status()
         result_text = response.json()["choices"][0]["text"]
@@ -830,7 +830,8 @@ async def extract_metadata(req: OCRRequest):
         for i, b64 in enumerate(req.info_images or [], 1):
             img = image_from_base64(b64)
             ocr_eng += f"=== INFO PAGE {i} ===\n" + ocr_image(img, "eng") + "\n"
-            ocr_info += f"=== INFO PAGE {i} ===\n" + ocr_image(img, req.language) + "\n"
+            info_ocr_text = ocr_with_vision_fallback(img, ocr_image(img, req.language))
+            ocr_info += f"=== INFO PAGE {i} ===\n" + info_ocr_text + "\n"
 
         # Process back cover
         if req.back_image:
