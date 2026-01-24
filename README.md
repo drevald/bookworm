@@ -39,7 +39,7 @@ cp .env.example .env
 | `GRPC_PORT` | 9090 | gRPC server port |
 | `WEB_UI_PORT` | 4040 | Web UI port |
 | `OCR_SERVICE_PORT` | 5000 | Python OCR service port |
-| `OLLAMA_URL` | http://192.168.0.189:11434 | Ollama LLM server URL |
+| `OLLAMA_URL` | http://192.168.0.137:11434 | Ollama LLM server URL |
 | `OLLAMA_MODEL` | qwen2.5:7b | LLM model to use |
 
 ## Quick Start

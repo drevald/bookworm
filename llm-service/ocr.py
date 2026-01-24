@@ -16,7 +16,7 @@ import os
 # CONFIGURATION
 # ========================================
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.189:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.137:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_COMPLETIONS_URL = f"{OLLAMA_URL}/v1/completions"
 

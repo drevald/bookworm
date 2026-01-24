@@ -92,7 +92,7 @@ docker logs bookworm-server -f
 
 **Java Application** (`server/.env` or `application.properties`):
 ```properties
-bookworm.ollama.url=http://192.168.0.189:11434
+bookworm.ollama.url=http://192.168.0.137:11434
 bookworm.ollama.model=qwen2.5:7b
 bookworm.llm.service.enabled=true
 ```

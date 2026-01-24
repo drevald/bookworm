@@ -37,9 +37,14 @@ logger = logging.getLogger(__name__)
 # OLLAMA CONFIGURATION
 # ========================================
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.189:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://192.168.0.137:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_COMPLETIONS_URL = f"{OLLAMA_URL}/v1/completions"
+
+# Timeout configurations (in seconds)
+VISION_OCR_TIMEOUT = int(os.getenv("VISION_OCR_TIMEOUT", "1200"))
+COVER_EXTRACTION_TIMEOUT = int(os.getenv("COVER_EXTRACTION_TIMEOUT", "1200"))
+INFO_EXTRACTION_TIMEOUT = int(os.getenv("INFO_EXTRACTION_TIMEOUT", "1200"))
 
 # Tesseract configuration
 # In Docker, tesseract is installed via apt-get and available in PATH
@@ -164,7 +169,7 @@ def ocr_with_vision_fallback(image: Image.Image, tesseract_result: str) -> str:
             "stream": False
         }
         
-        response = requests.post(vision_url, json=payload, timeout=90)
+        response = requests.post(vision_url, json=payload, timeout=VISION_OCR_TIMEOUT)
         if response.status_code == 200:
             result = response.json()
             vision_text = result.get("response", "")
@@ -690,7 +695,7 @@ def extract_cover_metadata(ocr_text: str) -> dict:
                 "max_tokens": 200,
                 "temperature": 0
             },
-            timeout=90
+            timeout=COVER_EXTRACTION_TIMEOUT
         )
         response.raise_for_status()
         result_text = response.json()["choices"][0]["text"]
@@ -740,7 +745,7 @@ def extract_metadata_with_llm(ocr_main: str, ocr_eng: str = "") -> dict:
                 "max_tokens": 800,  # Increased from 400 to allow full response
                 "temperature": 0
             },
-            timeout=90
+            timeout=INFO_EXTRACTION_TIMEOUT
         )
         response.raise_for_status()
         result_text = response.json()["choices"][0]["text"]

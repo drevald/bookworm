@@ -23,7 +23,7 @@ services:
     ports:
       - 5000:5000
     environment:
-      OLLAMA_URL: http://192.168.0.189:11434
+      OLLAMA_URL: http://192.168.0.137:11434
       OLLAMA_MODEL: qwen2.5:7b
       SERVICE_PORT: 5000
     networks:
