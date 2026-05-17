@@ -28,7 +28,7 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
 
             // 2. Trigger Async Processing (OCR & Parsing)
             String language = request.hasMetadata() ? request.getMetadata().getLanguage() : null;
-            bookProcessingService.processBookAsync(savedBook.getId(), language);
+            bookProcessingService.processBookAsync(savedBook.getId(), language, "auto");
 
             // 3. Return immediate response
             UploadBookResponse response = UploadBookResponse.newBuilder()

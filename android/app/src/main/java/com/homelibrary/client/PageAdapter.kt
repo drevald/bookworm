@@ -49,21 +49,25 @@ class PageAdapter(
                         "INFO PAGE"
                     }
                 }
+                PageType.BARCODE -> "BARCODE"
                 PageType.OTHER -> "PAGE"
             }
 
-            // Load thumbnail from file
+            // Load thumbnail from file (sub-sampled to avoid OOM on large camera images)
             try {
                 val imageFile = File(page.imagePath)
-                Log.d("PageAdapter", "Loading image: ${page.imagePath}, exists: ${imageFile.exists()}, size: ${imageFile.length()}")
-
                 if (imageFile.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(page.imagePath)
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(page.imagePath, opts)
+                    var sampleSize = 1
+                    var w = opts.outWidth; var h = opts.outHeight
+                    while (w > 512 || h > 512) { sampleSize *= 2; w /= 2; h /= 2 }
+                    val bitmap = BitmapFactory.decodeFile(page.imagePath,
+                        BitmapFactory.Options().apply { inSampleSize = sampleSize })
                     if (bitmap != null) {
                         binding.pageThumbnail.setImageBitmap(bitmap)
-                        Log.d("PageAdapter", "Bitmap loaded successfully: ${bitmap.width}x${bitmap.height}")
                     } else {
-                        Log.e("PageAdapter", "BitmapFactory.decodeFile returned null for ${page.imagePath}")
+                        Log.e("PageAdapter", "decodeFile returned null for ${page.imagePath}")
                         binding.pageThumbnail.setImageResource(android.R.color.darker_gray)
                     }
                 } else {

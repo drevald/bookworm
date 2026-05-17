@@ -24,6 +24,8 @@ public class Book {
 
     private String title;
     private String isbn;
+    /** Raw value decoded from barcode image (ISBN-13 digits). */
+    private String barcodeValue;
     private Integer publicationYear;
 
     @Column(length = 100)
@@ -57,6 +59,20 @@ public class Book {
     @ManyToOne
     @JoinColumn(name = "shelf_id")
     private Shelf shelf;
+
+    /** Which provider supplied the title/authors/publisher (e.g. "РГБ", "Google Books", "OCR"). */
+    private String metadataSource;
+
+    /**
+     * JSON map of field name → source, e.g. {"title":"РГБ","isbn":"Barcode","udk":"OCR"}.
+     * Null means not tracked (e.g. after a manual edit).
+     */
+    @Column(columnDefinition = "TEXT")
+    private String fieldSourcesJson;
+
+    /** Raw OCR text output from all images — preserved across metadata clears. */
+    @Column(columnDefinition = "TEXT")
+    private String rawOcrText;
 
     @CreationTimestamp
     private LocalDateTime createdAt;

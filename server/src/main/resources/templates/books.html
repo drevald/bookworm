@@ -69,6 +69,9 @@
                     <button id="reprocessSelectedBtn" class="btn-reprocess" onclick="reprocessSelected()" disabled>
                         Reprocess Selected (<span id="selectedCountReprocess">0</span>)
                     </button>
+                    <button id="cleanSelectedBtn" style="background-color:#fd7e14;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:14px;" onclick="cleanMetadataSelected()" disabled>
+                        Clean Metadata (<span id="selectedCountClean">0</span>)
+                    </button>
                     <button id="deleteSelectedBtn" class="btn-delete" onclick="deleteSelected()" disabled>
                         Delete Selected (<span id="selectedCount">0</span>)
                     </button>
@@ -175,17 +178,21 @@
 
         function updateDeleteButton() {
             const checkboxes = document.querySelectorAll('.book-checkbox:checked');
-            const deleteBtn = document.getElementById('deleteSelectedBtn');
+            const deleteBtn    = document.getElementById('deleteSelectedBtn');
             const reprocessBtn = document.getElementById('reprocessSelectedBtn');
-            const countSpan = document.getElementById('selectedCount');
+            const cleanBtn     = document.getElementById('cleanSelectedBtn');
+            const countSpan        = document.getElementById('selectedCount');
             const countSpanReprocess = document.getElementById('selectedCountReprocess');
-            
+            const countSpanClean   = document.getElementById('selectedCountClean');
+
             const count = checkboxes.length;
             countSpan.textContent = count;
             countSpanReprocess.textContent = count;
+            if (countSpanClean) countSpanClean.textContent = count;
             deleteBtn.disabled = count === 0;
             reprocessBtn.disabled = count === 0;
-            
+            if (cleanBtn) cleanBtn.disabled = count === 0;
+
             // Update "select all" checkbox state
             const allCheckboxes = document.querySelectorAll('.book-checkbox');
             const selectAllCheckbox = document.getElementById('selectAll');
@@ -217,6 +224,26 @@
                 form.appendChild(input);
             });
             
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function cleanMetadataSelected() {
+            const checkboxes = document.querySelectorAll('.book-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+            if (ids.length === 0) return;
+            if (!confirm(`Clear metadata for ${ids.length} book(s)? Images will not be deleted.`)) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/books/bulk-clean-metadata';
+            ids.forEach(id => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'ids';
+                input.value = id;
+                form.appendChild(input);
+            });
             document.body.appendChild(form);
             form.submit();
         }

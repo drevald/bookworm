@@ -93,6 +93,7 @@ class BookEditActivity : AppCompatActivity() {
         binding.backButton.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         binding.addCoverButton.setOnClickListener { capturePhoto(PageType.COVER) }
         binding.addInfoButton.setOnClickListener { capturePhoto(PageType.INFO_PAGE) }
+        binding.addBarcodeButton.setOnClickListener { capturePhoto(PageType.BARCODE) }
         binding.addPageButton.setOnClickListener { capturePhoto(PageType.OTHER) }
         binding.sendButton.setOnClickListener { sendBook() }
         binding.deleteBookButton.setOnClickListener { confirmDeleteBook() }
@@ -132,6 +133,7 @@ class BookEditActivity : AppCompatActivity() {
             when (type) {
                 PageType.COVER -> "Cover"
                 PageType.INFO_PAGE -> "Info Page"
+                PageType.BARCODE -> "Barcode"
                 PageType.OTHER -> "Other Page"
             }
         }.toTypedArray()
@@ -190,14 +192,16 @@ class BookEditActivity : AppCompatActivity() {
 
             val bookWithPages = repository.getBookWithPages(bookId)
             if (bookWithPages != null) {
-                // Validate required pages
+                // Validate required pages: cover always required;
+                // info page required only when there's no barcode.
                 val hasCover = bookWithPages.pages.any { it.type == PageType.COVER }
                 val hasInfo = bookWithPages.pages.any { it.type == PageType.INFO_PAGE }
+                val hasBarcode = bookWithPages.pages.any { it.type == PageType.BARCODE }
 
-                if (!hasCover || !hasInfo) {
+                if (!hasCover || (!hasInfo && !hasBarcode)) {
                     val missing = mutableListOf<String>()
                     if (!hasCover) missing.add("cover")
-                    if (!hasInfo) missing.add("info page")
+                    if (!hasInfo && !hasBarcode) missing.add("info page or barcode")
                     Toast.makeText(
                         this@BookEditActivity,
                         "Missing: ${missing.joinToString(", ")}",
@@ -219,7 +223,13 @@ class BookEditActivity : AppCompatActivity() {
             setBackgroundColor(android.graphics.Color.BLACK)
 
             try {
-                val bitmap = BitmapFactory.decodeFile(page.imagePath)
+                val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(page.imagePath, opts)
+                var sampleSize = 1
+                var w = opts.outWidth; var h = opts.outHeight
+                while (w > 2048 || h > 2048) { sampleSize *= 2; w /= 2; h /= 2 }
+                val bitmap = BitmapFactory.decodeFile(page.imagePath,
+                    BitmapFactory.Options().apply { inSampleSize = sampleSize })
                 if (bitmap != null) {
                     setImageBitmap(bitmap)
                 } else {

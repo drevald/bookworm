@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -43,7 +44,14 @@ public class PythonOCRService {
         @JsonProperty("back_image")
         private String backImage;
 
+        @JsonProperty("barcode_image")
+        private String barcodeImage;
+
         private String language = "rus";
+
+        /** Force a specific Python GOST parser: "2018", "2003", "84", "2008", or null for auto. */
+        @JsonProperty("gost_parser")
+        private String gostParser;
     }
 
     @Data
@@ -61,6 +69,12 @@ public class PythonOCRService {
         private String bbk;
         private String annotation;
         private Double confidence;
+
+        @JsonProperty("barcode_value")
+        private String barcodeValue;
+
+        @JsonProperty("raw_ocr")
+        private String rawOcr;
     }
 
     @Data
@@ -74,17 +88,24 @@ public class PythonOCRService {
         private String bbk;
         private String annotation;
         private Set<String> authors = new HashSet<>();
+        /** Raw value decoded from barcode image (ISBN-13 digits, null if no barcode). */
+        private String barcodeValue;
+        /** Raw OCR text from all images combined. */
+        private String rawOcrText;
     }
 
     /**
      * Extract metadata from book images using Python OCR service
      */
-    public ParsedBookData extractMetadata(byte[] coverImage, List<byte[]> infoImages, byte[] backImage, String language) {
+    public ParsedBookData extractMetadata(byte[] coverImage, List<byte[]> infoImages, byte[] backImage, byte[] barcodeImage, String language, String gostParser) {
         try {
             log.info("Calling Python OCR service at: {}", ocrServiceUrl);
 
             OCRRequest request = new OCRRequest();
             request.setLanguage(language != null ? language : "rus");
+            if (gostParser != null && !gostParser.isBlank()) {
+                request.setGostParser(gostParser);
+            }
 
             if (coverImage != null && coverImage.length > 0) {
                 request.setCoverImage(Base64.getEncoder().encodeToString(coverImage));
@@ -103,6 +124,11 @@ public class PythonOCRService {
 
             if (backImage != null && backImage.length > 0) {
                 request.setBackImage(Base64.getEncoder().encodeToString(backImage));
+            }
+
+            if (barcodeImage != null && barcodeImage.length > 0) {
+                request.setBarcodeImage(Base64.getEncoder().encodeToString(barcodeImage));
+                log.info("Sending barcode image to OCR service");
             }
 
             HttpHeaders headers = new HttpHeaders();
@@ -154,7 +180,65 @@ public class PythonOCRService {
             data.getAuthors().add(metadata.getAuthor());
         }
 
+        data.setBarcodeValue(metadata.getBarcodeValue());
+        data.setRawOcrText(metadata.getRawOcr());
+
         return data;
+    }
+
+    /**
+     * Run the full preprocessing pipeline on a single image and return each
+     * intermediate stage as JPEG bytes.
+     *
+     * Keys in the returned map:
+     *   "perspective" — after planar homography correction
+     *   "dewarped"    — after full pipeline (perspective + dewarp + illumination)
+     *
+     * Returns an empty map if the call fails.
+     */
+    public Map<String, byte[]> preprocessImageStages(byte[] imageData) {
+        try {
+            String b64 = Base64.getEncoder().encodeToString(imageData);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> entity = new HttpEntity<>("{\"image\":\"" + b64 + "\"}", headers);
+            ResponseEntity<java.util.Map> response = restTemplate.postForEntity(
+                    ocrServiceUrl + "/preprocess-stages", entity, java.util.Map.class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                Map<String, byte[]> result = new java.util.LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : response.getBody().entrySet()) {
+                    if (entry.getValue() instanceof String b64val) {
+                        result.put((String) entry.getKey(), Base64.getDecoder().decode(b64val));
+                    }
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("preprocessImageStages call failed: {}", e.getMessage());
+        }
+        return java.util.Collections.emptyMap();
+    }
+
+    /**
+     * Dewarp and illuminate-correct a single image via the Python service.
+     * Returns the processed JPEG bytes, or the original bytes if the call fails.
+     */
+    public byte[] preprocessImage(byte[] imageData) {
+        try {
+            String b64 = Base64.getEncoder().encodeToString(imageData);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> entity = new HttpEntity<>("{\"image\":\"" + b64 + "\"}", headers);
+            ResponseEntity<java.util.Map> response = restTemplate.postForEntity(
+                    ocrServiceUrl + "/preprocess-image", entity, java.util.Map.class);
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String resultB64 = (String) response.getBody().get("image");
+                if (resultB64 != null) return Base64.getDecoder().decode(resultB64);
+            }
+        } catch (Exception e) {
+            log.warn("preprocessImage call failed: {}", e.getMessage());
+        }
+        return imageData;
     }
 
     /**

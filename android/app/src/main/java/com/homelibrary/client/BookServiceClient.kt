@@ -47,6 +47,7 @@ class BookServiceClient(private val host: String, private val port: Int) {
         context: Context,
         coverUri: Uri,
         infoUris: List<Uri>,
+        barcodeUri: Uri? = null,
         language: String = "rus"
     ): Flow<UploadResult> = callbackFlow {
 
@@ -70,7 +71,7 @@ class BookServiceClient(private val host: String, private val port: Int) {
         }
 
         try {
-            Log.d(TAG, "Uploading cover and ${infoUris.size} info page(s)")
+            Log.d(TAG, "Uploading cover, ${infoUris.size} info page(s), barcode=${barcodeUri != null}")
 
             // Build list of PageImages
             val pageImages = mutableListOf<PageImage>()
@@ -85,6 +86,12 @@ class BookServiceClient(private val host: String, private val port: Int) {
             // Add cover
             val coverImage = loadImage(context, coverUri, ImageType.COVER)
             pageImages.add(coverImage)
+
+            // Add barcode if present
+            if (barcodeUri != null) {
+                val barcodeImage = loadImage(context, barcodeUri, ImageType.BARCODE)
+                pageImages.add(barcodeImage)
+            }
 
             // Build request
             val request = UploadBookRequest.newBuilder()

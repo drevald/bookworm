@@ -50,7 +50,7 @@ class ReviewActivity : AppCompatActivity() {
             (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic")) ||
             "google_sdk" == android.os.Build.PRODUCT
 
-        val host = if (isEmulator) "10.0.2.2" else "192.168.0.106"
+        val host = if (isEmulator) "10.0.2.2" else "192.168.0.198"
         val client = BookServiceClient(host, 9090)
 
         lifecycleScope.launch(Dispatchers.IO) {

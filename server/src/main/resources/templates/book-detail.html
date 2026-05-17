@@ -54,13 +54,8 @@
         }
 
         @keyframes zoom {
-            from {
-                transform: scale(0)
-            }
-
-            to {
-                transform: scale(1)
-            }
+            from { transform: scale(0) }
+            to   { transform: scale(1) }
         }
 
         .close {
@@ -133,12 +128,66 @@
             background-color: rgba(0, 0, 0, 0.8);
         }
 
-        .modal-nav-prev {
-            left: 20px;
-        }
+        .modal-nav-prev { left: 20px; }
+        .modal-nav-next { right: 20px; }
 
-        .modal-nav-next {
-            right: 20px;
+        /* Field source badge */
+        .field-source {
+            display: inline-block;
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 10px;
+            margin-left: 8px;
+            vertical-align: middle;
+            border: 1px solid #ddd;
+        }
+        .field-source-ocr      { color: #888; background: #f5f5f5; }
+        .field-source-barcode  { color: #0056b3; background: #e8f0ff; border-color: #b8d0ff; }
+        .field-source-provider { color: #1a7a3e; background: #e8f8ee; border-color: #a8dfc0; }
+        .field-source-manual   { color: #6f42c1; background: #f3eeff; border-color: #c9b4f0; }
+        .field-source-gost     { color: #8b4513; background: #fdf3e7; border-color: #f0c896; }
+
+        /* Progress bar */
+        .processing-bar-wrap {
+            margin-bottom: 24px;
+            padding: 16px 20px;
+            background: #f0f7ff;
+            border: 1px solid #b3d4ff;
+            border-radius: 8px;
+        }
+        .processing-bar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .processing-bar-message {
+            font-weight: 600;
+            color: #0056b3;
+            font-size: 14px;
+        }
+        .processing-bar-pct {
+            font-size: 13px;
+            color: #555;
+        }
+        .processing-bar-track {
+            background: #d6e8ff;
+            border-radius: 6px;
+            height: 18px;
+            overflow: hidden;
+        }
+        .processing-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3a90e8, #0056b3);
+            border-radius: 6px;
+            transition: width 0.6s ease;
+            min-width: 4px;
+        }
+        .processing-bar-fill.done {
+            background: #28a745;
+        }
+        .processing-bar-fill.failed {
+            background: #dc3545;
         }
     </style>
     <script th:inline="javascript">
@@ -146,89 +195,126 @@
         const totalImages = /*[[${book.images.size()}]]*/ 0;
         const imageTypes = /*[[${book.images.![type.toString()]}]]*/ [];
         let currentIndex = 0;
+        let pollingInterval = null;
 
         function confirmDelete() {
             return confirm("Are you sure you want to delete this book? This action cannot be undone.");
         }
 
-        function reprocessBook(language) {
-            const langName = language === 'rus' ? 'Russian (Cyrillic)' : 'English';
-            if (confirm(`Reprocess OCR for this book using ${langName}?`)) {
-                fetch(`/books/${bookId}/reprocess?language=${encodeURIComponent(language)}`, { method: 'POST' })
+        function confirmCleanMetadata() {
+            if (!confirm("Clear all metadata for this book? Images will not be deleted. You can reprocess to re-extract metadata.")) return;
+            fetch(`/books/${bookId}/clean-metadata`, { method: 'POST' })
+                .then(r => r.text())
+                .then(() => window.location.reload())
+                .catch(err => alert('Error: ' + err));
+        }
+
+        function toggleRawOcr(btn) {
+            const block = document.getElementById('rawOcrBlock');
+            const icon  = document.getElementById('rawOcrToggleIcon');
+            const hidden = block.style.display === 'none';
+            block.style.display = hidden ? 'block' : 'none';
+            icon.textContent = hidden ? '▼' : '▶';
+            btn.childNodes[1].textContent = (hidden ? ' Hide' : ' Show') + ' raw OCR text';
+        }
+
+        function reprocessBook() {
+            const language = document.getElementById('regenLanguage').value;
+            const source = document.getElementById('regenSource').value;
+            const sourceName = document.getElementById('regenSource').options[document.getElementById('regenSource').selectedIndex].text;
+            const langName = language === 'rus' ? 'Russian' : 'English';
+            if (confirm(`Reprocess "${document.title.split(' - ')[0]}" using ${langName} OCR, metadata from: ${sourceName}?`)) {
+                fetch(`/books/${bookId}/reprocess?language=${encodeURIComponent(language)}&source=${encodeURIComponent(source)}`, { method: 'POST' })
                     .then(response => response.text())
-                    .then(data => {
-                        alert('OCR reprocessing started! The page will refresh in 5 seconds.');
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 5000);
+                    .then(() => {
+                        showProgressBar(5, 'Starting reprocessing...');
+                        startProgressPolling();
                     })
-                    .catch(error => {
-                        alert('Error: ' + error);
-                    });
+                    .catch(error => alert('Error: ' + error));
             }
         }
 
+        // ── Progress bar ──────────────────────────────────────────────────────
+
+        function showProgressBar(progress, message) {
+            const wrap = document.getElementById('processingStatus');
+            if (wrap) wrap.style.display = 'block';
+            updateProgressBar(progress, message, false, false);
+        }
+
+        function updateProgressBar(progress, message, done, failed) {
+            const fill = document.getElementById('processingBar');
+            const msg  = document.getElementById('processingMessage');
+            const pct  = document.getElementById('processingPercent');
+            if (fill) {
+                fill.style.width = Math.min(100, Math.max(4, progress)) + '%';
+                fill.className = 'processing-bar-fill' + (done ? ' done' : failed ? ' failed' : '');
+            }
+            if (msg)  msg.textContent  = message || 'Processing...';
+            if (pct)  pct.textContent  = progress + '%';
+        }
+
+        function startProgressPolling() {
+            stopProgressPolling();
+            pollingInterval = setInterval(() => {
+                fetch(`/api/books/${bookId}/processing-status`)
+                    .then(r => r.json())
+                    .then(data => {
+                        updateProgressBar(data.progress, data.message, data.stage === 'DONE', data.stage === 'FAILED');
+                        if (!data.active) {
+                            stopProgressPolling();
+                            setTimeout(() => window.location.reload(), 800);
+                        }
+                    })
+                    .catch(() => stopProgressPolling());
+            }, 2000);
+        }
+
+        function stopProgressPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        // ── Image viewer ──────────────────────────────────────────────────────
+
         function showImage(index) {
             currentIndex = index;
-            const img = document.getElementById('bookImage');
+            const img   = document.getElementById('bookImage');
             const label = document.getElementById('imageLabel');
-
-            // Update thumbnail image
             img.src = `/images/${bookId}/${index}`;
-
-            // Update image type label
-            if (label) {
-                label.textContent = getImageTypeName(index);
-            }
-
-            // Update pager dots
+            if (label) label.textContent = getImageTypeName(index);
             document.querySelectorAll('.pager-dot').forEach((dot, i) => {
-                if (i === index) {
-                    dot.classList.add('active');
-                } else {
-                    dot.classList.remove('active');
-                }
+                dot.classList.toggle('active', i === index);
             });
         }
 
         function getImageTypeName(index) {
-            if (index >= imageTypes.length) {
-                return `Image ${index + 1}`;
-            }
-
+            if (index >= imageTypes.length) return `Image ${index + 1}`;
             const type = imageTypes[index];
-
-            // Count how many images of this type we've seen before this index
             let typeCount = 0;
             for (let i = 0; i < index; i++) {
-                if (imageTypes[i] === type) {
-                    typeCount++;
-                }
+                if (imageTypes[i] === type) typeCount++;
             }
-
             switch(type) {
-                case 'COVER':
-                    return 'Cover';
-                case 'BACK':
-                    return 'Back Cover';
-                case 'INFO_PAGE':
-                    return typeCount > 0 ? `Info Page ${typeCount + 1}` : 'Info Page';
-                default:
-                    return `Image ${index + 1}`;
+                case 'COVER':                return 'Cover';
+                case 'BACK':                 return 'Back Cover';
+                case 'INFO_PAGE':            return typeCount > 0 ? `Info Page ${typeCount + 1}` : 'Info Page';
+                case 'INFO_PAGE_PERSPECTIVE': return typeCount > 0 ? `Perspective Fix ${typeCount + 1}` : 'Perspective Fix';
+                case 'INFO_PAGE_DEWARPED':   return typeCount > 0 ? `Dewarped ${typeCount + 1}` : 'Dewarped';
+                default:                     return `Image ${index + 1}`;
             }
         }
 
         function openModal(index) {
             currentIndex = index;
-            const modal = document.getElementById("imageModal");
+            const modal    = document.getElementById("imageModal");
             const modalImg = document.getElementById("img01");
-            const caption = document.getElementById("caption");
-
+            const caption  = document.getElementById("caption");
             modal.style.display = "block";
-            // Use /full endpoint to get ORIGINAL unresized image
             modalImg.src = `/images/${bookId}/${index}/full`;
             caption.textContent = getImageTypeName(index);
-
             updateModalNavigation();
         }
 
@@ -239,59 +325,50 @@
         function navigateModal(direction) {
             currentIndex = (currentIndex + direction + totalImages) % totalImages;
             const modalImg = document.getElementById("img01");
-            const caption = document.getElementById("caption");
-
+            const caption  = document.getElementById("caption");
             modalImg.src = `/images/${bookId}/${currentIndex}/full`;
             caption.textContent = getImageTypeName(currentIndex);
-
             updateModalNavigation();
         }
 
         function updateModalNavigation() {
             const prevBtn = document.getElementById("modalPrev");
             const nextBtn = document.getElementById("modalNext");
-
-            if (totalImages <= 1) {
-                if (prevBtn) prevBtn.style.display = "none";
-                if (nextBtn) nextBtn.style.display = "none";
-            } else {
-                if (prevBtn) prevBtn.style.display = "block";
-                if (nextBtn) nextBtn.style.display = "block";
-            }
+            const show = totalImages > 1;
+            if (prevBtn) prevBtn.style.display = show ? "block" : "none";
+            if (nextBtn) nextBtn.style.display = show ? "block" : "none";
         }
 
         document.addEventListener('DOMContentLoaded', function () {
-            const modal = document.getElementById("imageModal");
-            const bookImage = document.getElementById("bookImage");
-
             // Click on thumbnail to open modal
-            if (bookImage) {
-                bookImage.onclick = function() {
-                    openModal(currentIndex);
-                };
-            }
+            const bookImage = document.getElementById("bookImage");
+            if (bookImage) bookImage.onclick = () => openModal(currentIndex);
 
-            // Close button
+            // Close modal
             const closeBtn = document.querySelector(".close");
-            if (closeBtn) {
-                closeBtn.onclick = closeModal;
-            }
+            if (closeBtn) closeBtn.onclick = closeModal;
 
-            // Close on outside click
-            modal.onclick = function(e) {
-                if (e.target === modal) {
-                    closeModal();
-                }
-            };
+            const modal = document.getElementById("imageModal");
+            modal.onclick = e => { if (e.target === modal) closeModal(); };
 
-            // Keyboard navigation
-            document.addEventListener('keydown', function(e) {
+            document.addEventListener('keydown', e => {
                 if (modal.style.display === "block") {
-                    if (e.key === "ArrowLeft") navigateModal(-1);
+                    if (e.key === "ArrowLeft")  navigateModal(-1);
                     if (e.key === "ArrowRight") navigateModal(1);
-                    if (e.key === "Escape") closeModal();
+                    if (e.key === "Escape")     closeModal();
                 }
             });
+
+            // Check if processing is still active on page load
+            fetch(`/api/books/${bookId}/processing-status`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.active) {
+                        showProgressBar(data.progress, data.message);
+                        startProgressPolling();
+                    }
+                })
+                .catch(() => {});
         });
     </script>
 </head>
@@ -300,8 +377,29 @@
     <div class="container" style="padding: 60px;">
         <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;">
             <h1 th:text="${book.title ?: 'Book Title'}" style="margin: 0; font-size: 2.5em;">Book Title</h1>
-            <a th:href="@{/}" style="background-color: #999; color: white; border: none; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px;">BACK</a>
+            <div style="display: flex; gap: 8px;">
+                <a th:if="${prevBookId != null}" th:href="@{/books/{id}(id=${prevBookId})}"
+                   style="background-color: #6c757d; color: white; padding: 12px 20px; text-decoration: none; font-weight: bold; border-radius: 4px;">&#8592; PREV</a>
+                <span th:if="${prevBookId == null}"
+                      style="background-color: #ccc; color: #fff; padding: 12px 20px; font-weight: bold; border-radius: 4px; cursor: default;">&#8592; PREV</span>
+                <a th:href="@{/}" style="background-color: #999; color: white; padding: 12px 20px; text-decoration: none; font-weight: bold; border-radius: 4px;">BACK</a>
+                <a th:if="${nextBookId != null}" th:href="@{/books/{id}(id=${nextBookId})}"
+                   style="background-color: #6c757d; color: white; padding: 12px 20px; text-decoration: none; font-weight: bold; border-radius: 4px;">NEXT &#8594;</a>
+                <span th:if="${nextBookId == null}"
+                      style="background-color: #ccc; color: #fff; padding: 12px 20px; font-weight: bold; border-radius: 4px; cursor: default;">NEXT &#8594;</span>
+            </div>
         </header>
+
+        <!-- Processing Progress Bar (hidden until processing starts) -->
+        <div id="processingStatus" class="processing-bar-wrap" style="display:none;">
+            <div class="processing-bar-header">
+                <span id="processingMessage" class="processing-bar-message">Processing...</span>
+                <span id="processingPercent" class="processing-bar-pct">0%</span>
+            </div>
+            <div class="processing-bar-track">
+                <div id="processingBar" class="processing-bar-fill" style="width:4%;"></div>
+            </div>
+        </div>
 
         <main style="display: flex; gap: 40px; margin-bottom: 40px;">
             <div style="flex-shrink: 0;">
@@ -324,37 +422,72 @@
                     </div>
                 </div>
                 <script th:inline="javascript">
-                    // Set tooltips for pager dots dynamically
                     document.addEventListener('DOMContentLoaded', function() {
                         const dots = document.querySelectorAll('.pager-dot');
-                        dots.forEach((dot, index) => {
-                            dot.title = getImageTypeName(index);
-                        });
+                        dots.forEach((dot, index) => { dot.title = getImageTypeName(index); });
                     });
                 </script>
             </div>
 
             <div style="flex: 1; line-height: 2;">
                 <div style="margin-bottom: 15px;">
-                    <strong>Title:</strong> <span th:text="${book.title ?: 'Not available'}">Not available</span>
+                    <strong>Title:</strong>
+                    <span th:text="${book.title ?: 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['title'] != null}"
+                          th:text="${fieldSources['title']}"
+                          th:classappend="${fieldSources['title'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['title'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['title'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['title'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>Authors:</strong> <span th:text="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'Not available'}">Not available</span>
+                    <strong>Authors:</strong>
+                    <span th:text="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['authors'] != null}"
+                          th:text="${fieldSources['authors']}"
+                          th:classappend="${fieldSources['authors'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['authors'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['authors'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['authors'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>ISBN:</strong> <span th:text="${book.isbn ?: 'Not available'}">Not available</span>
+                    <strong>ISBN:</strong>
+                    <span th:text="${book.isbn ?: 'Not available'}">Not available</span>
+                    <span th:if="${book.barcodeValue != null}"
+                          style="margin-left:8px; font-size:12px; color:#888;"
+                          th:text="'(barcode: ' + ${book.barcodeValue} + ')'"></span>
+                    <span th:if="${fieldSources != null and fieldSources['isbn'] != null}"
+                          th:text="${fieldSources['isbn']}"
+                          th:classappend="${fieldSources['isbn'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['isbn'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['isbn'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['isbn'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>Publisher:</strong> <span th:text="${book.publisher != null ? book.publisher.name : 'Not available'}">Not available</span>
+                    <strong>Publisher:</strong>
+                    <span th:text="${book.publisher != null ? book.publisher.name : 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['publisher'] != null}"
+                          th:text="${fieldSources['publisher']}"
+                          th:classappend="${fieldSources['publisher'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['publisher'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['publisher'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['publisher'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>Publication Year:</strong> <span th:text="${book.publicationYear ?: 'Not available'}">Not available</span>
+                    <strong>Publication Year:</strong>
+                    <span th:text="${book.publicationYear ?: 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['year'] != null}"
+                          th:text="${fieldSources['year']}"
+                          th:classappend="${fieldSources['year'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['year'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['year'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['year'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>UDK:</strong> <span th:text="${book.udk ?: 'Not available'}">Not available</span>
+                    <strong>UDK:</strong>
+                    <span th:text="${book.udk ?: 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['udk'] != null}"
+                          th:text="${fieldSources['udk']}"
+                          th:classappend="${fieldSources['udk'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['udk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <strong>BBK:</strong> <span th:text="${book.bbk ?: 'Not available'}">Not available</span>
+                    <strong>BBK:</strong>
+                    <span th:text="${book.bbk ?: 'Not available'}">Not available</span>
+                    <span th:if="${fieldSources != null and fieldSources['bbk'] != null}"
+                          th:text="${fieldSources['bbk']}"
+                          th:classappend="${fieldSources['bbk'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['bbk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
+                          class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
                     <strong>Shelf:</strong>
@@ -367,9 +500,18 @@
                 </div>
                 <div th:if="${book.annotation != null and !#strings.isEmpty(book.annotation)}" style="margin-bottom: 15px;">
                     <strong>Annotation:</strong>
+                    <span th:if="${fieldSources != null and fieldSources['annotation'] != null}"
+                          th:text="${fieldSources['annotation']}"
+                          th:classappend="${fieldSources['annotation'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['annotation'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['annotation'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider'))"
+                          class="field-source" style="vertical-align: baseline;"></span>
                     <div style="margin-top: 8px; padding: 12px; background-color: #f8f9fa; border-left: 3px solid #007bff; border-radius: 4px; line-height: 1.6;">
                         <span th:text="${book.annotation}">Not available</span>
                     </div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <strong>Metadata Source:</strong>
+                    <span th:text="${book.metadataSource ?: 'Unknown'}"
+                          th:style="${book.metadataSource == 'OCR' or book.metadataSource == null} ? 'color:#888;' : (${book.metadataSource == 'GOST'} ? 'color:#8b4513; font-weight:bold;' : (${book.metadataSource == 'Manual'} ? 'color:#6f42c1; font-weight:bold;' : 'color:#28a745; font-weight:bold;'))">Unknown</span>
                 </div>
                 <div style="margin-bottom: 15px;">
                     <strong>Added to Library:</strong> <span th:text="${book.createdAt != null ? #temporals.format(book.createdAt, 'MMM dd, yyyy HH:mm') : 'Not available'}">Not available</span>
@@ -377,29 +519,59 @@
             </div>
         </main>
 
-        <div style="display: flex; gap: 15px;">
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
             <a th:href="@{/books/{id}/edit(id=${book.id})}" style="background-color: #6c757d; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block;">EDIT</a>
             <form th:action="@{/books/{id}/delete(id=${book.id})}" method="post" style="display: inline;" onsubmit="return confirmDelete()">
                 <button type="submit" style="background-color: #dc3545; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">DELETE</button>
             </form>
-            <button onclick="reprocessBook('rus')" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer; margin-right: 10px;">REGEN (RUS)</button>
-            <button onclick="reprocessBook('eng')" style="background-color: #007bff; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REGEN (ENG)</button>
+            <button onclick="confirmCleanMetadata()" style="background-color: #fd7e14; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;" title="Clear all extracted metadata (images are kept)">CLEAN METADATA</button>
+            <select id="regenLanguage" style="padding: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px;">
+                <option value="rus">Russian OCR</option>
+                <option value="eng">English OCR</option>
+            </select>
+            <select id="regenSource" style="padding: 10px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px;">
+                <option value="auto">Auto (all providers)</option>
+                <option value="ocr">OCR only</option>
+                <optgroup label="ГОСТ parsers">
+                    <option value="gost_2018">ГОСТ Р 7.0.100-2018</option>
+                    <option value="gost_2003">ГОСТ 7.1-2003</option>
+                    <option value="gost_84">ГОСТ 7.1-84</option>
+                    <option value="gost_2008">ГОСТ Р 7.0.5-2008</option>
+                    <option value="gost">ГОСТ (ANTLR4)</option>
+                </optgroup>
+                <optgroup label="Online libraries">
+                    <option value="rsl">РГБ (Ленинка)</option>
+                    <option value="neb">НЭБ</option>
+                    <option value="google">Google Books</option>
+                    <option value="openlibrary">Open Library</option>
+                </optgroup>
+            </select>
+            <button onclick="reprocessBook()" style="background-color: #28a745; color: white; border: none; padding: 12px 24px; font-weight: bold; border-radius: 4px; cursor: pointer;">REPROCESS</button>
+        </div>
+
+        <!-- Raw OCR Preview -->
+        <div th:if="${book.rawOcrText != null and !#strings.isEmpty(book.rawOcrText)}"
+             style="margin-top: 32px;">
+            <button onclick="toggleRawOcr(this)"
+                    style="background: none; border: 1px solid #ccc; padding: 6px 14px; border-radius: 4px;
+                           cursor: pointer; font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px;">
+                <span id="rawOcrToggleIcon">▶</span> Show raw OCR text
+            </button>
+            <div id="rawOcrBlock" style="display:none; margin-top: 12px;">
+                <pre style="background:#f5f5f5; border:1px solid #ddd; border-radius:4px; padding:16px;
+                            font-size:12px; line-height:1.5; max-height:500px; overflow-y:auto;
+                            white-space:pre-wrap; word-break:break-word; color:#333;"
+                     th:text="${book.rawOcrText}"></pre>
+            </div>
         </div>
 
         <!-- The Modal -->
         <div id="imageModal" class="modal">
             <span class="close" title="Close (Esc)">&times;</span>
-
-            <!-- Navigation arrows -->
             <span id="modalPrev" class="modal-nav modal-nav-prev" onclick="navigateModal(-1)" title="Previous (←)">&#10094;</span>
             <span id="modalNext" class="modal-nav modal-nav-next" onclick="navigateModal(1)" title="Next (→)">&#10095;</span>
-
-            <!-- Large image -->
             <img class="modal-content" id="img01" style="cursor: zoom-out;" onclick="closeModal()">
-
-            <!-- Caption -->
-            <div id="caption" style="margin: auto; display: block; width: 80%; max-width: 700px; text-align: center; color: #ccc; padding: 20px 0; font-size: 18px;">
-            </div>
+            <div id="caption" style="margin: auto; display: block; width: 80%; max-width: 700px; text-align: center; color: #ccc; padding: 20px 0; font-size: 18px;"></div>
         </div>
 
         <footer>

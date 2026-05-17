@@ -10,7 +10,7 @@ services:
       POSTGRES_USER: bookworm
       POSTGRES_PASSWORD: bookworm
     ports:
-      - 5437:5432
+      - 5438:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -18,13 +18,11 @@ services:
 
   # Python OCR + Metadata Service (proven to work - from ocr.py)
   ocr-service:
-    build: ./llm-service
+    build: ./ocr-service
     container_name: bookworm-ocr-service
     ports:
       - 5000:5000
     environment:
-      OLLAMA_URL: http://192.168.0.137:11434
-      OLLAMA_MODEL: qwen2.5:7b
       SERVICE_PORT: 5000
     networks:
       - bookworm-network

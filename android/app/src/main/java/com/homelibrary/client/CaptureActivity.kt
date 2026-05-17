@@ -45,6 +45,7 @@ class CaptureActivity : AppCompatActivity() {
         val text = when (pageType) {
             "COVER" -> "Take photo of COVER"
             "INFO_PAGE" -> "Take photo of INFO PAGE"
+            "BARCODE" -> "Take photo of BARCODE"
             else -> "Take photo of PAGE"
         }
         binding.instructionText.text = text

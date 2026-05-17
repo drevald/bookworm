@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "client"
+rootProject.name = "bookworm"
 include(":app")

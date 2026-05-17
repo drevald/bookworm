@@ -11,7 +11,7 @@ import android.content.SharedPreferences
 object AppSettings {
     private const val PREFS_NAME = "bookworm_settings"
     private const val KEY_SERVER_HOST = "server_host"
-    private const val DEFAULT_HOST = "10.0.2.2"
+    private const val DEFAULT_HOST = "192.168.0.198"
     
     val SERVER_OPTIONS = listOf(
         "10.0.2.2" to "Emulator (10.0.2.2)",

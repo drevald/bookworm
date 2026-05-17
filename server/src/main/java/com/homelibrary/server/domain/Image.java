@@ -40,6 +40,10 @@ public class Image {
     private LocalDateTime createdAt;
 
     public enum ImageType {
-        COVER, BACK, INFO_PAGE
+        COVER, BACK, INFO_PAGE, BARCODE,
+        /** INFO_PAGE after planar perspective correction only. */
+        INFO_PAGE_PERSPECTIVE,
+        /** INFO_PAGE after full pipeline: perspective + text-line dewarp + illumination. */
+        INFO_PAGE_DEWARPED
     }
 }

@@ -48,23 +48,27 @@ class UploadManager(
                 repository.updateBookStatus(bookId, BookStatus.SENT)
                 updateProgress(bookId, UploadState.Uploading)
 
-                // Get cover and info page URIs
+                // Get cover, info page, and barcode URIs
                 val pages = bookWithPages.pages
                 val coverPage = pages.find { it.type == PageType.COVER }
                 val infoPages = pages.filter { it.type == PageType.INFO_PAGE }
+                val barcodePage = pages.find { it.type == PageType.BARCODE }
 
-                if (coverPage != null && infoPages.isNotEmpty()) {
-                    val coverUri = Uri.fromFile(File(coverPage.imagePath))
+                // Cover is always required. Info page is required only when there's no barcode —
+                // a barcode alone is enough for ISBN lookup.
+                val hasEnoughContent = coverPage != null && (infoPages.isNotEmpty() || barcodePage != null)
+                if (hasEnoughContent) {
+                    val coverUri = Uri.fromFile(File(coverPage!!.imagePath))
                     val infoUris = infoPages.map { Uri.fromFile(File(it.imagePath)) }
+                    val barcodeUri = barcodePage?.let { Uri.fromFile(File(it.imagePath)) }
 
-                    Log.d(TAG, "Uploading book $bookId: cover=${coverPage.imagePath}, info_pages=${infoPages.size}")
+                    Log.d(TAG, "Uploading book $bookId: cover=${coverPage.imagePath}, info_pages=${infoPages.size}, barcode=${barcodePage?.imagePath}")
                     infoPages.forEachIndexed { index, page ->
                         Log.d(TAG, "  Info page ${index + 1}: ${page.imagePath}")
                     }
 
                     val language = AppSettings.getOcrLanguage(context)
-                    // Pass language to uploadBook
-                    bookServiceClient.uploadBook(context, coverUri, infoUris, language).collect { result ->
+                    bookServiceClient.uploadBook(context, coverUri, infoUris, barcodeUri, language).collect { result ->
                         Log.d(TAG, "Upload result for book $bookId: $result")
                         when (result) {
                             is BookServiceClient.UploadResult.Success -> {
@@ -80,7 +84,7 @@ class UploadManager(
                 } else {
                     val missing = mutableListOf<String>()
                     if (coverPage == null) missing.add("cover")
-                    if (infoPages.isEmpty()) missing.add("info page(s)")
+                    if (infoPages.isEmpty() && barcodePage == null) missing.add("info page or barcode")
                     updateProgress(bookId, UploadState.Error("Missing: ${missing.joinToString(", ")}"))
                 }
             } catch (e: Exception) {

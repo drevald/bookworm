@@ -111,6 +111,16 @@
             android:contentDescription="Add page"
             android:src="@drawable/ic_add_page" />
 
+        <!-- Add Barcode Button -->
+        <ImageButton
+            android:id="@+id/addBarcodeButton"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Add barcode"
+            android:src="@drawable/ic_add_barcode" />
+
         <!-- Send Button -->
         <ImageButton
             android:id="@+id/sendButton"

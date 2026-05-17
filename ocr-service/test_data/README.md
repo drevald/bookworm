@@ -61,6 +61,6 @@ Or use real scanned book page images.
 ## Running Tests
 
 ```bash
-cd llm-service
+cd ocr-service
 pytest test_app.py -v -s
 ```
