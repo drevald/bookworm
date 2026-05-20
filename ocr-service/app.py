@@ -26,8 +26,6 @@ from ocr import (
     extract_metadata_from_info_page,
     extract_title_author_from_cover,
     detect_barcode_isbn,
-    preprocess_stages,
-    preprocess_for_ocr,
 )
 
 try:
@@ -63,9 +61,6 @@ class OCRRequest(BaseModel):
     language:      str                 = "rus"
     gost_parser:   Optional[str]       = None  # "2018"|"2003"|"84"|"2008"|None
 
-
-class PreprocessRequest(BaseModel):
-    image: str  # base64-encoded image
 
 class BookMetadata(BaseModel):
     title:          str
@@ -167,42 +162,6 @@ async def extract_metadata(req: OCRRequest):
         logger.exception(e)
         raise HTTPException(500, str(e))
 
-
-@app.post("/preprocess-image")
-async def preprocess_image_endpoint(req: PreprocessRequest):
-    """Return the dewarped + illumination-corrected version of a single image."""
-    try:
-        img       = image_from_base64(req.image)
-        processed = preprocess_for_ocr(img)
-        buf = io.BytesIO()
-        processed.save(buf, format="JPEG", quality=90)
-        return {"image": base64.b64encode(buf.getvalue()).decode()}
-    except Exception as e:
-        logger.exception(e)
-        raise HTTPException(500, str(e))
-
-
-@app.post("/preprocess-stages")
-async def preprocess_stages_endpoint(req: PreprocessRequest):
-    """
-    Return all intermediate preprocessing stages for a single image.
-
-    Response:
-        perspective  — after planar homography (base64 JPEG)
-        dewarped     — after full pipeline: perspective + dewarp + illumination (base64 JPEG)
-    """
-    try:
-        img    = image_from_base64(req.image)
-        stages = preprocess_stages(img)
-        result = {}
-        for name, pil_img in stages.items():
-            buf = io.BytesIO()
-            pil_img.save(buf, format="JPEG", quality=90)
-            result[name] = base64.b64encode(buf.getvalue()).decode()
-        return result
-    except Exception as e:
-        logger.exception(e)
-        raise HTTPException(500, str(e))
 
 
 if __name__ == "__main__":
