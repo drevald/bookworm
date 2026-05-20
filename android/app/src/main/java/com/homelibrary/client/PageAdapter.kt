@@ -16,7 +16,8 @@ class PageAdapter(
     private val onRetakeClick: (PageEntity) -> Unit,
     private val onDeleteClick: (PageEntity) -> Unit,
     private val onChangeTypeClick: (PageEntity) -> Unit,
-    private val onImageClick: (PageEntity) -> Unit
+    private val onImageClick: (PageEntity) -> Unit,
+    private val onCropClick: (PageEntity) -> Unit
 ) : ListAdapter<PageEntity, PageAdapter.PageViewHolder>(PageDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageViewHolder {
@@ -81,6 +82,7 @@ class PageAdapter(
 
             // Click listeners
             binding.pageThumbnail.setOnClickListener { onImageClick(page) }
+            binding.cropButton.setOnClickListener { onCropClick(page) }
             binding.changeTypeButton.setOnClickListener { onChangeTypeClick(page) }
             binding.retakeButton.setOnClickListener { onRetakeClick(page) }
             binding.deletePageButton.setOnClickListener { onDeleteClick(page) }

@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import os
+import re
 
 import pytesseract
 import uvicorn
@@ -20,6 +21,8 @@ from ocr import (
     image_from_base64,
     ocr_image,
     ocr_image_rgb_channels,
+    ocr_info_page,
+    ocr_isbn_from_image,
     extract_metadata_from_info_page,
     extract_title_author_from_cover,
     detect_barcode_isbn,
@@ -97,9 +100,13 @@ async def extract_metadata(req: OCRRequest):
         # Info pages
         for i, b64 in enumerate(req.info_images or [], 1):
             img = image_from_base64(b64)
-            page_text = ocr_image(img, req.language)
+            # Two-pass Russian OCR: preprocessed full page + raw catalog crop
+            page_text = ocr_info_page(img) if req.language == "rus" else ocr_image(img, req.language)
             ocr_info += f"=== INFO PAGE {i} ===\n{page_text}\n"
-            ocr_eng  += f"=== INFO PAGE {i} ===\n" + ocr_image(img, "eng") + "\n"
+            # English OCR: strip-scan for ISBN (full-image OCR stops mid-page on tall images)
+            isbn_line = ocr_isbn_from_image(img)
+            if isbn_line:
+                ocr_eng += f"=== INFO PAGE {i} ISBN ===\n{isbn_line}\n"
 
         # Back cover
         if req.back_image:

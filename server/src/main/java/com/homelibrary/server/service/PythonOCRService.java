@@ -206,7 +206,7 @@ public class PythonOCRService {
                     ocrServiceUrl + "/preprocess-stages", entity, java.util.Map.class);
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, byte[]> result = new java.util.LinkedHashMap<>();
-                for (Map.Entry<?, ?> entry : response.getBody().entrySet()) {
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) response.getBody()).entrySet()) {
                     if (entry.getValue() instanceof String b64val) {
                         result.put((String) entry.getKey(), Base64.getDecoder().decode(b64val));
                     }

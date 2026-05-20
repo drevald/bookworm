@@ -59,7 +59,8 @@ class MainActivity : AppCompatActivity() {
 
         // Setup RecyclerView
         bookAdapter = BookAdapter(
-            onBookClick = { bookWithPages -> openBookEdit(bookWithPages) }
+            onBookClick = { bookWithPages -> openBookEdit(bookWithPages) },
+            onDeleteClick = { bookWithPages -> confirmDeleteBook(bookWithPages) }
         )
         binding.booksRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
@@ -144,6 +145,19 @@ class MainActivity : AppCompatActivity() {
             }
             startActivity(intent)
         }
+    }
+
+    private fun confirmDeleteBook(bookWithPages: BookWithPages) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete Book")
+            .setMessage("Delete this book and all its pages? This cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                lifecycleScope.launch {
+                    repository.deleteBook(bookWithPages.book.id)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun openBookEdit(bookWithPages: BookWithPages) {

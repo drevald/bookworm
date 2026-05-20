@@ -44,6 +44,54 @@ if TESSERACT_CMD:
 # through unchanged.
 
 
+# ── 0. Grid-calibration dewarp (loaded once from dewarp_calibration.npz) ───
+
+_GRID_CAL: Optional[dict] = None
+_GRID_CAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "dewarp_calibration.npz")
+
+
+def _load_grid_cal() -> Optional[dict]:
+    """Load (and cache) the grid dewarp calibration if the npz exists."""
+    global _GRID_CAL
+    if _GRID_CAL is not None:
+        return _GRID_CAL
+    if not os.path.exists(_GRID_CAL_PATH):
+        return None
+    try:
+        d = np.load(_GRID_CAL_PATH)
+        _GRID_CAL = {"map_x_rel": d["map_x_rel"], "map_y_rel": d["map_y_rel"]}
+        logger.info("Grid dewarp calibration loaded (%d H × %d V lines)",
+                    int(d.get("n_h_lines", 0)), int(d.get("n_v_lines", 0)))
+        return _GRID_CAL
+    except Exception as exc:
+        logger.warning("Failed to load grid calibration: %s", exc)
+        return None
+
+
+def _apply_grid_dewarp(img_rgb: np.ndarray) -> np.ndarray:
+    """
+    Apply the grid-calibrated dewarp map.
+    If no calibration file exists the image is returned unchanged.
+    The stored map is in relative (0–1) coordinates and is bilinearly
+    rescaled to match any input resolution.
+    """
+    cal = _load_grid_cal()
+    if cal is None:
+        return img_rgb
+    h, w = img_rgb.shape[:2]
+    mx = cal["map_x_rel"]
+    my = cal["map_y_rel"]
+    if mx.shape != (h, w):
+        mx = cv2.resize(mx, (w, h), interpolation=cv2.INTER_LINEAR)
+        my = cv2.resize(my, (w, h), interpolation=cv2.INTER_LINEAR)
+    map_x = (mx * (w - 1)).astype(np.float32)
+    map_y = (my * (h - 1)).astype(np.float32)
+    return cv2.remap(img_rgb, map_x, map_y,
+                     interpolation=cv2.INTER_LINEAR,
+                     borderMode=cv2.BORDER_REPLICATE)
+
+
 # ── 1. Perspective pre-correction ──────────────────────────────────────────
 
 def _order_corners(pts: np.ndarray) -> np.ndarray:
@@ -353,10 +401,14 @@ def preprocess_for_ocr(image: Image.Image,
 
     # Stage 1 — perspective
     img_rgb = _perspective_correct(img_rgb)
+
+    # Stage 2 — grid-calibration dewarp (book-curl correction)
+    img_rgb = _apply_grid_dewarp(img_rgb)
+
     h, w    = img_rgb.shape[:2]
     gray    = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
 
-    # Stage 2 — detect baselines
+    # Stage 3 — detect baselines
     debug_bl = img_rgb.copy() if debug_dir else None
     polys    = _detect_text_baselines(gray, debug_img=debug_bl)
 
@@ -367,7 +419,7 @@ def preprocess_for_ocr(image: Image.Image,
             _save_debug(debug_dir, img_rgb, corrected, debug_bl, None)
         return Image.fromarray(corrected)
 
-    # Stage 3 — build map and remap
+    # Stage 4 — build map and remap
     debug_mesh     = img_rgb.copy() if debug_dir else None
     map_x, map_y   = _build_dewarp_map(polys, h, w, debug_img=debug_mesh)
     dewarped       = cv2.remap(img_rgb, map_x, map_y,
@@ -391,17 +443,79 @@ def image_from_base64(b64: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(b64)))
 
 def ocr_image(image: Image.Image, lang: str) -> str:
-    return pytesseract.image_to_string(preprocess_for_ocr(image), lang=lang)
+    return pytesseract.image_to_string(image, lang=lang)
+
+
+def ocr_info_page(image: Image.Image) -> str:
+    """
+    Two-pass Russian OCR optimised for book copyright/info pages.
+
+    Pass 1 — full-page OCR (no preprocessing — dewarping distorts pages).
+              Captures the main body: citation, annotation, editorial block.
+
+    Pass 2 — raw top-left crop (~50% × 20%), PSM 6, NO preprocessing.
+              Preprocessing degrades the small catalog-block text.
+              Prepended to the main text so the structured parser finds
+              УДК / ББК at the very start.
+
+    English OCR (for ISBN detection) is handled by the caller and passed
+    separately to extract_metadata_from_info_page as ocr_eng.
+    """
+    main_text = ocr_image(image, 'rus')
+
+    # Pass 2: raw catalog block crop (top-left corner)
+    w, h = image.size
+    catalog_crop = image.crop((0, 0, int(w * 0.50), int(h * 0.20)))
+    catalog_text = pytesseract.image_to_string(
+        catalog_crop, lang='rus', config='--psm 6'
+    )
+
+    if re.search(r'УДК|ББК', catalog_text):
+        return catalog_text.strip() + '\n\n' + main_text
+
+    return main_text
+
+
+def ocr_isbn_from_image(image: Image.Image) -> str:
+    """
+    Scan the full image in horizontal strips using English OCR and return
+    the first line that contains an ISBN pattern.
+
+    Rationale: Tesseract silently stops reading a full tall image partway
+    through when large blank areas separate text blocks.  Scanning in
+    overlapping strips guarantees every part of the page is read.
+    ISBN must be OCR-ed in English — Russian mode garbles 'ISBN' into
+    '15ВМ', 'Г5ВМ', etc., making digit extraction unreliable.
+    """
+    w, h = image.size
+    strip_h = max(h // 8, 300)   # 8 strips, each at least 300px tall
+    step    = strip_h // 2        # 50% overlap
+
+    isbn_re = re.compile(r'\bISBN\b', re.IGNORECASE)
+
+    y = 0
+    while y < h:
+        strip = image.crop((0, y, w, min(y + strip_h, h)))
+        text  = pytesseract.image_to_string(strip, lang='eng')
+        for line in text.splitlines():
+            if isbn_re.search(line) and line.strip():
+                return line.strip()
+        y += step
+
+    return ""
+
 
 def ocr_image_rgb_channels(image: Image.Image, lang: str) -> str:
     """
     Try OCR on multiple colour channels (normal + inverted).
     Useful for decorative covers where text may be on coloured backgrounds.
     Stops early once a result with >= 40 chars is found.
+
+    NOTE: No preprocessing — cover images are artwork, not flat text pages.
+    Dewarping/illumination correction destroys cover images.
     """
     from PIL import ImageOps
 
-    image = preprocess_for_ocr(image)
     if image.mode != "RGB":
         image = image.convert("RGB")
 
@@ -433,9 +547,10 @@ _BBK = re.compile(r"ББК\s*[:.]?\s*(.+)")
 #   ISBN → 15ВМ  (I→1, S→5, B→В cyrillic, N→М cyrillic)
 #   ISBN → 15В№  (N→№ numero sign)
 #   ISBN → ISBМ  (N→М)
+#   ISBN → Г5ВМ  (I→Г cyrillic; sans-serif uppercase I resembles Г)
 _ISBN = re.compile(
-    r"(?:ISBN|1[35][ВBвb][МNмн№]|ISB[МNмн])\s*[№:\-]?\s*"
-    r"([0-9XxХх\-\–\—\−\s]{10,25})",  # Х/х: Cyrillic X misread; _clean_isbn validates
+    r"(?:ISBN|1[35][ВBвb][МNмн№]|ISB[МNмн]|Г[35][ВBвb][МNмн])\s*[№:\-]?\s*"
+    r"([0-9XxХх\-\–\—\−\.\s]{10,25})",  # Х/х: Cyrillic X misread; dot: OCR separator; _clean_isbn validates
     re.IGNORECASE,
 )
 
@@ -472,19 +587,19 @@ def _score(data: dict) -> int:
     return score
 
 def _clean_isbn(raw: str) -> str:
-    # Normalize Cyrillic Х → Latin X before stripping
-    normalized = raw.replace("Х", "X").replace("х", "x")
-    digits = re.sub(r"[^0-9Xx]", "", normalized).upper()
-    if len(digits) == 13 and digits.isdigit():
-        return digits
-    if len(digits) == 10:
-        if digits.isdigit() or (digits[-1] == "X" and digits[:-1].isdigit()):
-            return digits
-    return "unknown"
+    # Normalize Cyrillic Х → Latin X, then keep only digits and X
+    result = re.sub(r"[^0-9X]", "", raw.replace("Х", "X").replace("х", "x").upper())
+    return result if result else "unknown"
 
 def _extract_isbn_from_text(text: str) -> str:
-    m = _ISBN.search(text)
-    return _clean_isbn(m.group(1)) if m else "unknown"
+    for m in _ISBN.finditer(text):
+        result = _clean_isbn(m.group(1))
+        if result != "unknown":
+            return result
+    return "unknown"
+
+# Public alias used by tests
+extract_isbn = _extract_isbn_from_text
 
 def _extract_udk(text: str) -> str:
     m = _UDK.search(text)
@@ -551,10 +666,72 @@ def _lines(text: str) -> list:
 _CITATION_WINDOW = 4
 
 # Pattern to find city:publisher,year on a SINGLE line (two-step fallback).
-# Used when the full citation regex fails due to two-column OCR noise.
+# Handles compound cities joined by ";" (e.g. "М.; Соловецкие острова: Publisher, Year").
+# Publisher may contain commas (e.g. "Аксиома, Мифрил") so use non-greedy .+? up to year.
 _CITY_PUB_YEAR = re.compile(
-    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,20})\s*:\s*(?P<publisher>[^,\n]{3,60}?),\s*(?P<year>(?:19|20)\d{2})"
+    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,20}(?:;\s*[А-ЯЁ][а-яёА-ЯЁ\s.]{0,25})?)"
+    r"\s*:\s*(?P<publisher>.+?),\s*(?P<year>(?:19|20)\d{2})"
 )
+
+# Авторский знак pattern for catalog-block detection (user heuristic):
+# "Letter + space or dash + two digits" — e.g. "С 45", "Ч-49", "М 74"
+_SIGN_CATALOG = re.compile(r'([А-ЯЁA-Z][ \-]\d{2,3})', re.UNICODE)
+
+# Author line pattern: Lastname A. B.  (initials may use "," instead of "." from OCR)
+# Examples: "Иванов И. И.", "Бобров Ю. Г.", "Бобров Ю, Г,"
+_AUTHOR_INITIALS = re.compile(
+    r"^([А-ЯЁ][а-яё]{1,20})\s+([А-ЯЁ][,.]\s*[А-ЯЁ][,.]?\s*)(?:[—\-].{0,20})?$"
+)
+
+# Physical description end-of-block marker: "— NNN с." or "NNN с.: ил."
+_PAGES_MARKER = re.compile(r"\d+\s*с[.:]")
+
+
+def _find_biblio_block(lines: list, isbn_idx: Optional[int] = None) -> tuple:
+    """
+    Locate the bibliographic description block and return
+    (author, block_lines, start_idx).
+
+    Strategy:
+      1. Look for авторский знак  → block starts there, author on preceding line.
+      2. Look for Lastname A. B.  → author line, block starts on the next line.
+
+    block_lines: joined text of the block (up to _PAGES_MARKER or isbn_idx).
+    Returns (None, None, None) when no block is found.
+    """
+    limit = isbn_idx if isbn_idx is not None else len(lines)
+
+    # Path 1: авторский знак anchor (existing logic)
+    for i, line in enumerate(lines):
+        if i >= limit:
+            break
+        if not _AUTHOR_SIGN.match(line):
+            continue
+        author, citation_text, c_idx = _parse_author_sign_block(lines, i)
+        if citation_text:
+            return author, citation_text, c_idx
+
+    # Path 2: Lastname A. B. anchor (no авторский знак)
+    for i, line in enumerate(lines):
+        if i >= limit:
+            break
+        m = _AUTHOR_INITIALS.match(line)
+        if not m:
+            continue
+        # Confirm this looks like an author, not a stray fragment:
+        # the block must contain a dash separator or page marker within 6 lines
+        window_end = min(i + 7, limit)
+        window_lines = lines[i + 1 : window_end]
+        window_text = " ".join(window_lines)
+        if not re.search(r"[—\-]|" + _PAGES_MARKER.pattern, window_text):
+            continue
+        # Normalise initials: replace commas with dots
+        initials = re.sub(r",", ".", m.group(2)).strip()
+        author = f"{m.group(1)} {initials}"
+        return author, window_text, i + 1
+
+    return None, None, None
+
 
 def _parse_author_sign_block(lines: list, i: int) -> tuple:
     """
@@ -613,7 +790,8 @@ _CITATION_2003 = re.compile(
     r"(?P<title>[^/—\n]{3,80}?)"
     r"(?:\s*/\s*[^—\n]+?)?"            # optional: / author (allow hyphens — translator credits)
     r"\s*[—\-]\s*"
-    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,15})\s*:\s*(?P<publisher>[^,]+?),\s*(?P<year>\d{4})"
+    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,15}(?:;\s*[А-ЯЁ][а-яёА-ЯЁ\s.]{0,25})?)"
+    r"\s*:\s*(?P<publisher>.+?),\s*(?P<year>\d{4})"
 )
 
 def _parse_gost_7_1_2003(text: str) -> dict:
@@ -645,8 +823,10 @@ def _parse_gost_7_1_2003(text: str) -> dict:
         if not cm:
             continue
 
-        # Reject if city looks like a full word (≥4 chars) — that's ГОСТ 7.0.100-2018
-        if len(cm.group("place").rstrip(".")) > 3:
+        # Reject if first city part looks like a full word (≥4 chars) — that's ГОСТ 7.0.100-2018
+        # Split on ";" to handle compound cities like "М.; Соловецкие острова"
+        first_city = cm.group("place").split(";")[0].strip().rstrip(".")
+        if len(first_city) > 3:
             continue
 
         data["author"]    = author
@@ -693,6 +873,20 @@ def _parse_gost_7_1_2003(text: str) -> dict:
                 break
             if data["title"] != "unknown":
                 break
+
+    # Fallback: Lastname A. B. anchor (no авторский знак)
+    if data["title"] == "unknown":
+        author, block_text, start_idx = _find_biblio_block(lines, isbn_idx)
+        if block_text:
+            cm = _CITATION_2003.search(block_text)
+            if cm:
+                first_city = cm.group("place").split(";")[0].strip().rstrip(".")
+                if len(first_city) <= 3:
+                    data["author"]    = author
+                    data["title"]     = _clean_title(cm.group("title"))
+                    data["publisher"] = cm.group("publisher").strip()
+                    data["year"]      = int(cm.group("year"))
+                    citation_idx      = start_idx
 
     if citation_idx is not None and isbn_idx is not None and isbn_idx > citation_idx + 1:
         data["annotation"] = " ".join(lines[citation_idx + 1 : isbn_idx])
@@ -808,10 +1002,11 @@ def _parse_gost_7_0_100_2018(text: str) -> dict:
 
 _CITATION_84 = re.compile(
     r"(?:(?P<author_pre>[А-ЯЁ][а-яё]+\s+[А-ЯЁA-Z]\.\s?(?:[А-ЯЁA-Z]\.)?)\s+)?"
-    r"(?P<title>[А-ЯЁ][^/—\-\n]{5,80}?)"
+    r"(?P<title>[А-ЯЁ][а-яё][^/—\-\n]{4,79}?)"
     r"(?:\s*/\s*[^—\n]+?)?"            # optional: / author (allow hyphens)
-    r"\s*[.—\-]+\s*"
-    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,15})\s*:\s*(?P<publisher>[^,]+?),\s*(?P<year>(?:19|20)\d{2})"
+    r"[,]?\s*[.—\-]+\s*"              # sep: allow OCR artefact "," before em-dash
+    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,15}(?:;\s*[А-ЯЁ][а-яёА-ЯЁ\s.]{0,25})?)"
+    r"\s*:\s*(?P<publisher>.+?),\s*(?P<year>(?:19|20)\d{2})"
 )
 _AUTHOR_DIRECT = re.compile(r"^([А-ЯЁA-Z]\.\s?[А-ЯЁA-Z]\.\s+[А-ЯЁ][а-яё]+)")
 
@@ -869,6 +1064,18 @@ def _parse_gost_7_1_84(text: str) -> dict:
             citation_idx      = i
             break
 
+    # Path 3: Lastname A. B. anchor (no авторский знак)
+    if data["title"] == "unknown":
+        author, block_text, start_idx = _find_biblio_block(lines, isbn_idx)
+        if block_text:
+            cm = _CITATION_84.search(block_text)
+            if cm:
+                data["author"]    = author
+                data["title"]     = _clean_title(cm.group("title"))
+                data["publisher"] = cm.group("publisher").strip()
+                data["year"]      = int(cm.group("year"))
+                citation_idx      = start_idx
+
     if citation_idx is not None and isbn_idx is not None and isbn_idx > citation_idx + 1:
         data["annotation"] = " ".join(lines[citation_idx + 1 : isbn_idx])
 
@@ -891,8 +1098,9 @@ _CITATION_REF_AUTHOR_FIRST = re.compile(
     r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,20})\s*:\s*(?P<publisher>[^,]+?),\s*(?P<year>\d{4})"
 )
 _CITATION_REF_TITLE_FIRST = re.compile(
-    r"(?P<title>[А-ЯЁ][^\n/]{5,80}?)\s*/\s*(?P<author>[^—\-\n]{3,50}?)\s*[.—\-]+\s*"
-    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,20})\s*:\s*(?P<publisher>[^,]+?),\s*(?P<year>\d{4})"
+    r"(?P<title>[А-ЯЁ][^\n/]{5,80}?)\s*/\s*(?P<author>[^—\-\n]{3,50}?)"
+    r"[.\s]*[—\-][.\s—\-]*"              # separator: requires at least one dash; handles ". — ", "—"
+    r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,20})\s*:\s*(?P<publisher>.+?),\s*(?P<year>\d{4})"
 )
 
 def _parse_gost_r_7_0_5_2008(text: str) -> dict:
@@ -901,6 +1109,7 @@ def _parse_gost_r_7_0_5_2008(text: str) -> dict:
     data["bbk"]  = _extract_bbk(text)
     data["isbn"] = _extract_isbn_from_text(text)
 
+    # Search on original text first (single-line citations)
     for pattern, author_key, title_key in [
         (_CITATION_REF_AUTHOR_FIRST, "author", "title"),
         (_CITATION_REF_TITLE_FIRST,  "author", "title"),
@@ -914,7 +1123,218 @@ def _parse_gost_r_7_0_5_2008(text: str) -> dict:
         data["year"]      = int(m.group("year"))
         break
 
+    # Fallback: join adjacent line pairs to handle multi-line citations.
+    # Title-first format often wraps across lines, e.g.:
+    #   "Территория : роман / Олег Куваев. — СПб. : Аз
+    #    бука, Азбука-Аттикус, 2021. — 352 с."
+    if data["title"] == "unknown":
+        lines = _lines(text)
+        for i in range(len(lines) - 1):
+            # Strip leading open-quote characters that precede the title
+            joined = re.sub(r'^["""«„]+', '', lines[i]) + " " + lines[i + 1]
+            m = _CITATION_REF_TITLE_FIRST.search(joined)
+            if not m:
+                continue
+            title = _clean_title(m.group("title"))
+            if not title or title == "unknown":
+                continue
+            data["title"]     = title
+            data["author"]    = _normalize_author(m.group("author"))
+            data["publisher"] = m.group("publisher").strip()
+            data["year"]      = int(m.group("year"))
+            break
+
     return data
+
+# ========================================
+# STRUCTURED PARSER  (primary strategy)
+# ========================================
+#
+# Algorithm anchored on the fixed block layout of Russian info pages:
+#
+#   УДК <value>          ← find this line
+#   ББК <value>          ← next non-empty line
+#   <авторский знак>     ← next non-empty line; memorise the sign token
+#   …
+#   <Author name>        ← line immediately before the citation line
+#   <sign>  <citation>   ← line starting with the same sign token
+#   ISBN <value>         ← first ISBN line after citation
+#   <annotation text>    ← lines after ISBN until first blank line
+#
+
+def _parse_structured(text: str) -> dict:
+    """
+    Structure-aware info-page parser.
+
+    Steps:
+    1. Scan full text for УДК → extract value
+    2. Scan full text for ББК → extract value
+    3. Try to read авторский знак from the catalog block (line after ББК)
+    4. Search full text for a line that starts with the sign token AND has
+       citation content on it.  Fallback: find any авторский знак line with
+       content (using a loose OCR-tolerant pattern).
+    5. Author = previous non-empty line before the citation line
+    6. Parse citation text (title, publisher, year)
+    7. ISBN = first ISBN line at or after the citation line
+    8. Annotation = lines after ISBN until first blank line
+    """
+    raw_lines = text.splitlines()
+    stripped  = [l.strip() for l in raw_lines]
+    data = _empty()
+
+    # Loose авторский знак: 1-2 letters + optional noise char + 1-3 digits,
+    # then whitespace + at least 5 chars of content.
+    # Handles OCR substitutions like "М!7" (space→!) or "Ч-49" (hyphen).
+    _SIGN_LOOSE = re.compile(
+        r'^([А-ЯЁа-яёA-Za-z]{1,2}[\-\s!.,]*\d{1,3})\s+(.{5,})',
+        re.UNICODE
+    )
+
+    # ── 1. УДК — scan full text ─────────────────────────────────────────────
+    udk_idx = None
+    for i, line in enumerate(stripped):
+        if re.match(r'^(?:УДК|UDK)\b', line, re.IGNORECASE):
+            udk_idx = i
+            val = re.sub(r'^(?:УДК|UDK)\s*', '', line, flags=re.IGNORECASE).strip()
+            data['udk'] = val or 'unknown'
+            break
+
+    # ── 2. ББК — scan full text ─────────────────────────────────────────────
+    bbk_idx = None
+    for i, line in enumerate(stripped):
+        if re.match(r'^ББК\b', line, re.IGNORECASE):
+            bbk_idx = i
+            val = re.sub(r'^ББК\s*', '', line, flags=re.IGNORECASE).strip()
+            data['bbk'] = val or 'unknown'
+            break
+
+    # ── 3. Авторский знак from catalog block ────────────────────────────────
+    # User heuristic: УДК / ББК / авторский знак lines can appear in mixed order.
+    # Search all 3 non-empty lines around the first catalog keyword for a sign
+    # matching "Letter + space-or-dash + two digits"  (e.g. "С 45", "Ч-49").
+    sign = None
+    catalog_anchor = min(x for x in [udk_idx, bbk_idx] if x is not None) \
+                     if (udk_idx is not None or bbk_idx is not None) else 0
+    # Scan a window of ±2 lines around the anchor, collecting up to 3 non-empty lines
+    scan_start = max(0, catalog_anchor - 2)
+    scan_end   = min(len(stripped), catalog_anchor + 6)
+    non_empty  = 0
+    for i in range(scan_start, scan_end):
+        if not stripped[i]:
+            continue
+        non_empty += 1
+        m = _SIGN_CATALOG.search(stripped[i])
+        if m:
+            sign = m.group(1)
+            break
+        if non_empty >= 3:
+            break
+
+    # ── 4. Find citation line starting with the sign (or any sign with content) ──
+    record_idx = None
+
+    if sign is not None:
+        # Prefer exact match from catalog-block sign
+        for i, line in enumerate(stripped):
+            if line.startswith(sign) and len(line) > len(sign) + 3:
+                if len(line[len(sign):].strip()) >= 5:
+                    record_idx = i
+                    break
+
+    if record_idx is None:
+        # Fallback: find the first авторский знак line that has citation content
+        # using the OCR-tolerant loose pattern
+        for i, line in enumerate(stripped):
+            m = _SIGN_LOOSE.match(line)
+            if m:
+                sign = m.group(1)
+                record_idx = i
+                break
+
+    if record_idx is None:
+        return data
+
+    # ── 5. Author = previous non-empty line ─────────────────────────────────
+    for i in range(record_idx - 1, -1, -1):
+        s = stripped[i]
+        if s and not re.match(r'^(?:УДК|ББК|ISBN|©|\d+\s*к\.)', s, re.IGNORECASE):
+            data['author'] = _trim_author_noise(_normalize_author(s))
+            break
+
+    # ── 6. Parse citation text ───────────────────────────────────────────────
+    citation_parts = [re.sub(r'^' + re.escape(sign) + r'\s*', '', stripped[record_idx]).strip()]
+    for i in range(record_idx + 1, min(record_idx + 6, len(stripped))):
+        if not stripped[i] or _ISBN.search(stripped[i]):
+            break
+        citation_parts.append(stripped[i])
+    citation_text = ' '.join(citation_parts)
+
+    for pattern in (_CITATION_2018, _CITATION_2003, _CITATION_84):
+        cm = pattern.search(citation_text)
+        if cm:
+            data['title']     = _clean_title(cm.group('title'))
+            data['publisher'] = cm.group('publisher').strip()
+            data['year']      = int(cm.group('year'))
+            break
+
+    # ── 7. ISBN ──────────────────────────────────────────────────────────────
+    isbn_idx = None
+    for i in range(record_idx, min(record_idx + 10, len(stripped))):
+        if _ISBN.search(stripped[i]):
+            isbn_idx = i
+            m = _ISBN.search(stripped[i])
+            data['isbn'] = _clean_isbn(m.group(1))
+            break
+
+    # ── 8. Annotation: lines after ISBN until first blank line ───────────────
+    # Skip leading blank lines between ISBN and annotation (OCR sometimes
+    # inserts an empty line between the ISBN line and the annotation block).
+    if isbn_idx is not None:
+        ann_start = isbn_idx + 1
+        while ann_start < len(stripped) and not stripped[ann_start]:
+            ann_start += 1
+        ann_lines = []
+        for i in range(ann_start, len(stripped)):
+            if not stripped[i]:
+                break
+            ann_lines.append(stripped[i])
+        if ann_lines:
+            data['annotation'] = ' '.join(ann_lines)
+
+    # ── 9. Embedded ББК / УДК fallback — scan full text ────────────────────
+    # ББК and УДК (Cyrillic abbreviations) may appear buried mid-line anywhere
+    # on the page: top-left catalog block, bottom catalog block, or mixed with
+    # 2-column TOC noise.  Scan the entire document when step 1/2 found nothing.
+    # Both abbreviations use Cyrillic letters: ББК, УДК.
+
+    if data['bbk'] == 'unknown':
+        for line in stripped:
+            m = re.search(
+                r'ББК\s*[:.]?\s*([0-9А-ЯЁ][0-9А-ЯЁа-яёA-Za-z().=:\-]{1,30})',
+                line
+            )
+            if m:
+                val = m.group(1).strip().rstrip(',')
+                # Strip trailing TOC noise: stop at first standalone lowercase word ≥4 chars
+                val = re.split(r'\s+[а-яё]{4,}', val)[0].strip()
+                if val:
+                    data['bbk'] = val
+                    break
+
+    if data['udk'] == 'unknown':
+        for line in stripped:
+            m = re.search(
+                r'УДК\s*[:.]?\s*([\d.\s:()+=/\-]{3,30})',
+                line
+            )
+            if m:
+                val = m.group(1).strip()
+                if val:
+                    data['udk'] = val
+                    break
+
+    return data
+
 
 # ========================================
 # MAIN PIPELINE
@@ -942,13 +1362,19 @@ def extract_metadata_from_info_page(ocr_text: str, ocr_eng: str = "",
     if gost_parser and gost_parser in _GOST_PARSERS:
         data = _GOST_PARSERS[gost_parser](ocr_text)
     else:
-        candidates = [
-            _parse_gost_7_0_100_2018(ocr_text),  # latest standard — wins on equal score
-            _parse_gost_7_1_2003(ocr_text),
-            _parse_gost_7_1_84(ocr_text),
-            _parse_gost_r_7_0_5_2008(ocr_text),
-        ]
-        data = max(candidates, key=_score)  # stable: first element wins ties
+        # Primary: structure-aware parser anchored on УДК/ББК/sign block
+        data = _parse_structured(ocr_text)
+        if _score(data) < 3:
+            # Fallback: try all GOST pattern parsers and pick the best
+            candidates = [
+                _parse_gost_7_0_100_2018(ocr_text),
+                _parse_gost_7_1_2003(ocr_text),
+                _parse_gost_7_1_84(ocr_text),
+                _parse_gost_r_7_0_5_2008(ocr_text),
+            ]
+            fallback = max(candidates, key=_score)
+            if _score(fallback) > _score(data):
+                data = fallback
 
     combined = ocr_text + "\n" + ocr_eng
     if data["isbn"] == "unknown":
@@ -973,17 +1399,22 @@ def preprocess_stages(image: Image.Image) -> dict:
     after_persp = _perspective_correct(img_rgb)
     stages = {"perspective": Image.fromarray(after_persp)}
 
-    # Stage 2: text-line dewarp + illumination
-    h, w  = after_persp.shape[:2]
-    gray  = cv2.cvtColor(after_persp, cv2.COLOR_RGB2GRAY)
+    # Stage 2: grid-calibration dewarp
+    after_grid = _apply_grid_dewarp(after_persp)
+    if _load_grid_cal() is not None:
+        stages["grid_dewarp"] = Image.fromarray(after_grid)
+
+    # Stage 3: text-line dewarp + illumination
+    h, w  = after_grid.shape[:2]
+    gray  = cv2.cvtColor(after_grid, cv2.COLOR_RGB2GRAY)
     polys = _detect_text_baselines(gray)
     if len(polys) >= 3:
         map_x, map_y = _build_dewarp_map(polys, h, w)
-        dewarped = cv2.remap(after_persp, map_x, map_y,
+        dewarped = cv2.remap(after_grid, map_x, map_y,
                              interpolation=cv2.INTER_LINEAR,
                              borderMode=cv2.BORDER_REPLICATE)
     else:
-        dewarped = after_persp
+        dewarped = after_grid
 
     stages["dewarped"] = Image.fromarray(_correct_illumination(dewarped))
     return stages

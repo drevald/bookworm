@@ -191,8 +191,8 @@ def test_extract_metadata(lang_and_book):
     if cover_path:
         request_data["cover_image"] = load_image_as_base64(cover_path)
 
-    # Collect all info page images (info.jpg, info_page.jpg, info1.jpg, info2.jpg, etc.)
-    for base_name in ["info", "info_page", "info1", "info2", "info3", "info4"]:
+    # Collect all info page images (info.jpg, info_page.jpg, full.jpg, info1.jpg, etc.)
+    for base_name in ["info", "info_page", "full", "info1", "info2", "info3", "info4"]:
         info_path = find_image(book_dir, base_name)
         if info_path:
             info_images.append(load_image_as_base64(info_path))

@@ -13,7 +13,8 @@ import com.homelibrary.client.data.BookWithPages
 import com.homelibrary.client.databinding.ItemBookBinding
 
 class BookAdapter(
-    private val onBookClick: (BookWithPages) -> Unit
+    private val onBookClick: (BookWithPages) -> Unit,
+    private val onDeleteClick: (BookWithPages) -> Unit
 ) : ListAdapter<BookWithPages, BookAdapter.BookViewHolder>(BookDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BookViewHolder {
@@ -88,6 +89,8 @@ class BookAdapter(
             for (i in 0 until binding.thumbnailsContainer.childCount) {
                 binding.thumbnailsContainer.getChildAt(i).setOnClickListener(clickListener)
             }
+
+            binding.deleteBookButton.setOnClickListener { onDeleteClick(bookWithPages) }
         }
     }
 

@@ -35,22 +35,51 @@ class BookEditActivity : AppCompatActivity() {
     private var bookId: Long = -1
     private var isNewBook: Boolean = false
     private var pendingPageType: PageType? = null
+    private var pendingCapturedImagePath: String? = null
+    private var pendingCapturedPageType: PageType? = null
     private var shelves: List<ShelfEntity> = emptyList()
     private var selectedShelfId: Long? = null
 
     private val captureResult = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        val pageType = pendingPageType
+        pendingPageType = null
         if (result.resultCode == Activity.RESULT_OK) {
             val imagePath = result.data?.getStringExtra(CaptureActivity.EXTRA_IMAGE_PATH)
-            val pageType = pendingPageType
-
             if (imagePath != null && pageType != null) {
-                lifecycleScope.launch {
-                    repository.addPage(bookId, pageType, File(imagePath))
-                }
+                // Auto-detect page boundaries before saving
+                pendingCapturedImagePath = imagePath
+                pendingCapturedPageType = pageType
+                autoCropResult.launch(Intent(this, CropActivity::class.java).apply {
+                    putExtra(CropActivity.EXTRA_IMAGE_PATH, imagePath)
+                    putExtra(CropActivity.EXTRA_PAGE_ID, -1L)
+                })
             }
-            pendingPageType = null
+        }
+    }
+
+    // Launched automatically after capture; saves the page once crop is done (or skipped)
+    private val autoCropResult = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { _ ->
+        val imagePath = pendingCapturedImagePath
+        val pageType  = pendingCapturedPageType
+        pendingCapturedImagePath = null
+        pendingCapturedPageType  = null
+        if (imagePath != null && pageType != null) {
+            lifecycleScope.launch {
+                repository.addPage(bookId, pageType, File(imagePath))
+            }
+        }
+    }
+
+    private val cropResult = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // The image file was overwritten in-place; force all thumbnails to reload
+            pageAdapter.notifyDataSetChanged()
         }
     }
 
@@ -82,7 +111,8 @@ class BookEditActivity : AppCompatActivity() {
             onRetakeClick = { page -> retakePage(page) },
             onDeleteClick = { page -> confirmDeletePage(page) },
             onChangeTypeClick = { page -> showChangeTypeDialog(page) },
-            onImageClick = { page -> showFullScreenImage(page) }
+            onImageClick = { page -> showFullScreenImage(page) },
+            onCropClick = { page -> launchCrop(page) }
         )
         binding.pagesRecyclerView.apply {
             layoutManager = LinearLayoutManager(this@BookEditActivity, LinearLayoutManager.HORIZONTAL, false)
@@ -125,6 +155,14 @@ class BookEditActivity : AppCompatActivity() {
             repository.deletePage(page.id, page.imagePath)
         }
         capturePhoto(page.type)
+    }
+
+    private fun launchCrop(page: PageEntity) {
+        val intent = Intent(this, CropActivity::class.java).apply {
+            putExtra(CropActivity.EXTRA_IMAGE_PATH, page.imagePath)
+            putExtra(CropActivity.EXTRA_PAGE_ID, page.id)
+        }
+        cropResult.launch(intent)
     }
 
     private fun showChangeTypeDialog(page: PageEntity) {

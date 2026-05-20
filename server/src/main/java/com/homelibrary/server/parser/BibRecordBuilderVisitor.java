@@ -208,7 +208,9 @@ public class BibRecordBuilderVisitor extends BibRecordBaseVisitor<Void> {
                 if (ar.issn != null) builder.issn(ar.issn);
             }
             case NOTE -> {
-                // Notes are ignored for now (could be stored as annotation)
+                if (ar.noteText != null && !ar.noteText.isBlank()) {
+                    builder.annotation(ar.noteText);
+                }
             }
             default -> { /* UNKNOWN — skip */ }
         }
