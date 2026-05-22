@@ -1,5 +1,6 @@
 package com.homelibrary.server.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,13 +35,14 @@ public class Image {
     @Lob
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
+    @JsonIgnore
     private byte[] data;
 
     @CreationTimestamp
     private LocalDateTime createdAt;
 
     public enum ImageType {
-        COVER, BACK, INFO_PAGE, BARCODE,
+        COVER, BACK, TITLE_PAGE, INFO_PAGE, BARCODE,
         /** INFO_PAGE after planar perspective correction only. */
         INFO_PAGE_PERSPECTIVE,
         /** INFO_PAGE after full pipeline: perspective + text-line dewarp + illumination. */

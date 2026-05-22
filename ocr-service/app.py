@@ -24,6 +24,7 @@ from ocr import (
     ocr_info_page,
     ocr_isbn_from_image,
     extract_metadata_from_info_page,
+    extract_metadata_from_title_page,
     extract_title_author_from_cover,
     detect_barcode_isbn,
 )
@@ -56,6 +57,7 @@ app = FastAPI(title="Bookworm OCR + Metadata Service")
 class OCRRequest(BaseModel):
     cover_image:   Optional[str]       = None
     info_images:   Optional[List[str]] = None
+    title_images:  Optional[List[str]] = None
     back_image:    Optional[str]       = None
     barcode_image: Optional[str]       = None
     language:      str                 = "rus"
@@ -103,6 +105,18 @@ async def extract_metadata(req: OCRRequest):
             if isbn_line:
                 ocr_eng += f"=== INFO PAGE {i} ISBN ===\n{isbn_line}\n"
 
+        # Title pages (old books with no GOST info page)
+        title_page_data = {}
+        for i, b64 in enumerate(req.title_images or [], 1):
+            img = image_from_base64(b64)
+            result = extract_metadata_from_title_page(img)
+            logger.info("Title page %d extracted: %s", i,
+                        {k: v for k, v in result.items() if k != "annotation"})
+            # Merge: first title page with a non-unknown value wins per field
+            for field, val in result.items():
+                if field not in title_page_data and val not in ("unknown", 0, None):
+                    title_page_data[field] = val
+
         # Back cover
         if req.back_image:
             back_img = image_from_base64(req.back_image)
@@ -117,23 +131,30 @@ async def extract_metadata(req: OCRRequest):
             if barcode_isbn:
                 logger.info("Barcode detected ISBN: %s", barcode_isbn)
 
-        if not ocr_cover.strip() and not ocr_info.strip() and not barcode_isbn:
+        if not ocr_cover.strip() and not ocr_info.strip() and not title_page_data and not barcode_isbn:
             raise HTTPException(400, "No OCR text extracted from provided images")
 
         # Extract
         cover_data = extract_title_author_from_cover(ocr_cover) if ocr_cover.strip() else {}
         info_data  = extract_metadata_from_info_page(ocr_info, ocr_eng, req.gost_parser) if ocr_info.strip() else {}
 
-        # Merge — info page wins; cover is fallback for title/author; barcode ISBN wins for isbn
+        def _val(field, default):
+            """Pick best value: info page → title page → cover → default."""
+            v = info_data.get(field, default)
+            if v in ("unknown", 0, None):
+                v = title_page_data.get(field, default)
+            return v
+
+        # Merge — info page wins; title page fills gaps; cover is last fallback for title/author
         data = {
-            "title":      info_data.get("title",     cover_data.get("title",     "unknown")),
-            "author":     info_data.get("author",    cover_data.get("author",    "unknown")),
-            "publisher":  info_data.get("publisher", "unknown"),
-            "year":       info_data.get("year",      0),
-            "isbn":       info_data.get("isbn",      "unknown"),
-            "udk":        info_data.get("udk",       "unknown"),
-            "bbk":        info_data.get("bbk",       "unknown"),
-            "annotation": info_data.get("annotation","unknown"),
+            "title":      _val("title",     cover_data.get("title",  "unknown")),
+            "author":     _val("author",    cover_data.get("author", "unknown")),
+            "publisher":  _val("publisher", "unknown"),
+            "year":       _val("year",      0),
+            "isbn":       _val("isbn",      "unknown"),
+            "udk":        _val("udk",       "unknown"),
+            "bbk":        _val("bbk",       "unknown"),
+            "annotation": _val("annotation","unknown"),
         }
 
         # Barcode ISBN overrides OCR-parsed ISBN (more reliable)

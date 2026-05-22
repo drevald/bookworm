@@ -1,5 +1,6 @@
 package com.homelibrary.server.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -8,7 +9,9 @@ import lombok.ToString;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -54,7 +57,8 @@ public class Book {
     @OneToMany(mappedBy = "book", cascade = CascadeType.ALL, orphanRemoval = true)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private Set<Image> images = new HashSet<>();
+    @JsonIgnore
+    private List<Image> images = new ArrayList<>();
 
     @ManyToOne
     @JoinColumn(name = "shelf_id")
@@ -72,6 +76,7 @@ public class Book {
 
     /** Raw OCR text output from all images — preserved across metadata clears. */
     @Column(columnDefinition = "TEXT")
+    @JsonIgnore
     private String rawOcrText;
 
     @CreationTimestamp
