@@ -507,10 +507,11 @@ _BBK = re.compile(r"ББК\s*[:.]?\s*(.+)")
 #   ISBN → 15В№  (N→№ numero sign)
 #   ISBN → ISBМ  (N→М)
 #   ISBN → Г5ВМ  (I→Г cyrillic; sans-serif uppercase I resembles Г)
+#   ISBN → ТОВМ  (I→Т, S→О — another Tesseract variant on Debian)
 #   separator: up to 5 non-digit non-newline chars (handles "$", ":", "№", etc.)
 #   digit group: $ included because Russian OCR commonly misreads 5 → $
 _ISBN = re.compile(
-    r"(?:ISBN|1[35$][ВBвb][МNмн№]|ISB[МNмн]|Г[35][ВBвb][МNмн])[^\d$\n]{0,5}"
+    r"(?:ISBN|1[35$][ВBвb][МNмн№]|ISB[МNмн]|Г[35][ВBвb][МNмн]|[ТT][ОO][ВBвb][МNмн])[^\d$\n]{0,5}"
     r"([$0-9XxХх\-\–\—\−\.\s]{10,25})",  # Х/х: Cyrillic X misread; $: 5 or S misread; _clean_isbn validates
     re.IGNORECASE,
 )
