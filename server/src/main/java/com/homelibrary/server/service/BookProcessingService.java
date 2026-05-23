@@ -81,26 +81,28 @@ public class BookProcessingService {
             byte[] coverImage = null;
             byte[] backImage = null;
             byte[] barcodeImage = null;
+            List<byte[]> titleImages = new ArrayList<>();
             List<byte[]> infoImages = new ArrayList<>();
 
             for (Image image : book.getImages()) {
                 switch (image.getType()) {
-                    case COVER    -> coverImage = image.getData();
-                    case BACK     -> backImage  = image.getData();
-                    case INFO_PAGE -> infoImages.add(image.getData());
-                    case BARCODE  -> barcodeImage = image.getData();
+                    case COVER      -> coverImage = image.getData();
+                    case BACK       -> backImage  = image.getData();
+                    case TITLE_PAGE -> titleImages.add(image.getData());
+                    case INFO_PAGE  -> infoImages.add(image.getData());
+                    case BARCODE    -> barcodeImage = image.getData();
                 }
             }
 
-            log.info("Collected images for book {}: cover={}, info_pages={}, back={}, barcode={}",
-                    bookId, coverImage != null, infoImages.size(), backImage != null, barcodeImage != null);
+            log.info("Collected images for book {}: cover={}, title_pages={}, info_pages={}, back={}, barcode={}",
+                    bookId, coverImage != null, titleImages.size(), infoImages.size(), backImage != null, barcodeImage != null);
 
             // ── 2. Call Python OCR service ─────────────────────────────────────────
             statusService.update(bookId, BookProcessingStatusService.Stage.OCR_RUNNING, 15, "Running OCR...");
             String[] pythonGost = source != null ? PYTHON_GOST_MAP.get(source.toLowerCase()) : null;
             String pythonGostParser = pythonGost != null ? pythonGost[0] : null;
             PythonOCRService.ParsedBookData ocrData = pythonOCRService.extractMetadata(
-                    coverImage, infoImages, backImage, barcodeImage, language, pythonGostParser);
+                    coverImage, titleImages, infoImages, backImage, barcodeImage, language, pythonGostParser);
 
             if (ocrData == null) {
                 log.error("Python OCR service failed for book {}", bookId);
@@ -180,7 +182,7 @@ public class BookProcessingService {
             } else if (providerResult.isPresent()) {
                 String providerName = providerResult.get().providerName();
                 log.info("Using provider '{}' as primary source for book {}", providerName, bookId);
-                fieldSources = applyProviderData(book, providerResult.get().dto(), ocrData, providerName, isbnSource);
+                fieldSources = applyProviderData(book, providerResult.get().dto(), ocrData, providerName, isbnSource, language);
                 book.setMetadataSource(providerName);
             } else {
                 log.info("Using OCR data for book {} (source={})", bookId, forceOcr ? "ocr (forced)" : "auto (fallback)");
@@ -266,21 +268,33 @@ public class BookProcessingService {
     /**
      * Apply provider data as primary, fill udk/bbk/annotation from OCR where missing.
      * Returns a map of field name → source name for history tracking.
+     *
+     * <p>For Cyrillic-script books (language="rus"), provider text fields (title,
+     * authors, publisher, annotation) are only used when they actually contain
+     * Cyrillic characters. If a provider returns transliterated/English data for a
+     * Russian book (e.g. Open Library), we fall back to OCR for those fields so
+     * the user sees the native-language metadata.</p>
      */
     private Map<String, String> applyProviderData(Book book, BookMetadataDto provider,
                                                    PythonOCRService.ParsedBookData ocr,
-                                                   String providerName, String isbnSource) {
+                                                   String providerName, String isbnSource,
+                                                   String language) {
         Map<String, String> sources = new LinkedHashMap<>();
+        boolean requireCyrillic = "rus".equalsIgnoreCase(language);
 
-        // Title: provider wins, fall back to OCR
-        if (setIfPresent(book::setTitle, provider.getTitle())) sources.put("title", providerName);
+        // Title: provider wins only if it has Cyrillic text (for Russian books), fall back to OCR
+        String providerTitle = (requireCyrillic && !hasCyrillicText(provider.getTitle())) ? null : provider.getTitle();
+        if (providerTitle != null && !providerTitle.equals(provider.getTitle())) {
+            log.info("Provider title '{}' lacks Cyrillic — using OCR title instead", provider.getTitle());
+        }
+        if (setIfPresent(book::setTitle, providerTitle)) sources.put("title", providerName);
         else if (setIfPresent(book::setTitle, ocr.getTitle())) sources.put("title", "OCR");
 
-        // ISBN: prefer provider isbn, fall back to OCR isbn
+        // ISBN: prefer provider isbn, fall back to OCR isbn (language-neutral)
         String isbn = provider.getIsbn() != null ? provider.getIsbn() : ocr.getIsbn();
         if (setIfPresent(book::setIsbn, isbn)) sources.put("isbn", isbnSource);
 
-        // Publication year: provider wins, fall back to OCR
+        // Publication year: provider wins, fall back to OCR (language-neutral)
         if (provider.getPublicationYear() != null) {
             book.setPublicationYear(provider.getPublicationYear());
             sources.put("year", providerName);
@@ -295,28 +309,51 @@ public class BookProcessingService {
         if (setIfMeaningful(book::setBbk, provider.getBbk())) sources.put("bbk", providerName);
         else if (setIfMeaningful(book::setBbk, ocr.getBbk())) sources.put("bbk", "OCR");
 
-        // Annotation: prefer provider description, fall back to OCR
-        String annotation = provider.getDescription() != null ? provider.getDescription() : ocr.getAnnotation();
+        // Annotation: prefer provider description if it has Cyrillic (for Russian books), fall back to OCR
+        String providerDesc = (requireCyrillic && !hasCyrillicText(provider.getDescription())) ? null : provider.getDescription();
+        String annotation = providerDesc != null ? providerDesc : ocr.getAnnotation();
         if (setIfMeaningful(book::setAnnotation, annotation)) {
-            sources.put("annotation", provider.getDescription() != null ? providerName : "OCR");
+            sources.put("annotation", providerDesc != null ? providerName : "OCR");
         }
 
-        // Publisher: provider wins, fall back to OCR
-        String pubName = provider.getPublisher() != null ? provider.getPublisher() : ocr.getPublisher();
+        // Publisher: provider wins if it has Cyrillic (for Russian books), fall back to OCR
+        String providerPub = (requireCyrillic && !hasCyrillicText(provider.getPublisher())) ? null : provider.getPublisher();
+        String pubName = providerPub != null ? providerPub : ocr.getPublisher();
         if (applyPublisher(book, pubName)) {
-            sources.put("publisher", provider.getPublisher() != null ? providerName : "OCR");
+            sources.put("publisher", providerPub != null ? providerName : "OCR");
         }
 
-        // Authors: provider wins, fall back to OCR
-        List<String> authorNames = provider.getAuthors() != null && !provider.getAuthors().isEmpty()
-                ? provider.getAuthors()
-                : new ArrayList<>(ocr.getAuthors());
+        // Authors: provider wins if they have Cyrillic text (for Russian books), fall back to OCR
         boolean hasProviderAuthors = provider.getAuthors() != null && !provider.getAuthors().isEmpty();
+        boolean providerAuthorsAreCyrillic = hasProviderAuthors &&
+                provider.getAuthors().stream().anyMatch(this::hasCyrillicText);
+        List<String> authorNames;
+        boolean useProviderAuthors;
+        if (hasProviderAuthors && (!requireCyrillic || providerAuthorsAreCyrillic)) {
+            authorNames = provider.getAuthors();
+            useProviderAuthors = true;
+        } else {
+            if (hasProviderAuthors) {
+                log.info("Provider authors {} lack Cyrillic — using OCR authors instead", provider.getAuthors());
+            }
+            authorNames = new ArrayList<>(ocr.getAuthors());
+            useProviderAuthors = false;
+        }
         if (applyAuthors(book, authorNames)) {
-            sources.put("authors", hasProviderAuthors ? providerName : "OCR");
+            sources.put("authors", useProviderAuthors ? providerName : "OCR");
         }
 
         return sources;
+    }
+
+    /** Returns true if the string contains at least one Cyrillic character. */
+    private boolean hasCyrillicText(String s) {
+        if (s == null || s.isBlank()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CYRILLIC) return true;
+        }
+        return false;
     }
 
     private Map<String, String> applyOcrData(Book book, PythonOCRService.ParsedBookData ocr, String isbnSource) {

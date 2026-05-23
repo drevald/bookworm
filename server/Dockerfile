@@ -5,7 +5,7 @@ WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts ./
 COPY gradle ./gradle
 
-# Step 2: Download dependencies (cached layer)
+# Step 2: yoywnload dependencies (cached layer)
 RUN gradle dependencies --no-daemon --no-build-cache
 
 # Step 3: Copy proto files (cached unless proto changes)
@@ -29,7 +29,7 @@ RUN apt-get update && \
 COPY tessdata /app/tessdata
 ENV TESSDATA_PREFIX=/app/tessdata/
 
-COPY --from=builder /app/build/libs/*.jar app.jar
+COPY --from=builder /app/build/libs/*-SNAPSHOT.jar app.jar
 
 EXPOSE 8080 9090 5005
 

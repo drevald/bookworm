@@ -1206,11 +1206,12 @@ def _parse_structured(text: str) -> dict:
     stripped  = [l.strip() for l in raw_lines]
     data = _empty()
 
-    # Loose авторский знак: 1-2 letters + optional noise char + 1-3 digits,
-    # then whitespace + at least 5 chars of content.
-    # Handles OCR substitutions like "М!7" (space→!) or "Ч-49" (hyphen).
+    # Loose авторский знак: optional leading № (OCR artifact), then 1-2 letters +
+    # optional noise char + 1-3 digits, then whitespace + at least 5 chars of content.
+    # Handles OCR substitutions like "М!7" (space→!) or "Ч-49" (hyphen), and
+    # the common "№М17 Заглавие..." variant where № is prepended by the OCR engine.
     _SIGN_LOOSE = re.compile(
-        r'^([А-ЯЁа-яёA-Za-z]{1,2}[\-\s!.,]*\d{1,3})\s+(.{5,})',
+        r'^[№]?([А-ЯЁа-яёA-Za-z]{1,2}[\-\s!.,]*\d{1,3})\s+(.{5,})',
         re.UNICODE
     )
 
@@ -1266,6 +1267,7 @@ def _parse_structured(text: str) -> dict:
                     record_idx = i
                     break
 
+    loose_citation_text = None  # content captured from _SIGN_LOOSE group 2
     if record_idx is None:
         # Fallback: find the first авторский знак line that has citation content.
         # Require the content (after the sign) to lead with an uppercase Cyrillic
@@ -1277,6 +1279,7 @@ def _parse_structured(text: str) -> dict:
             if m and re.match(r'^[—\-]?\s*[А-ЯЁ]', m.group(2)):
                 sign = m.group(1)
                 record_idx = i
+                loose_citation_text = m.group(2)  # already stripped of sign prefix
                 break
 
     if record_idx is None:
@@ -1313,7 +1316,13 @@ def _parse_structured(text: str) -> dict:
     # ── 6. Parse citation text ───────────────────────────────────────────────
     # Collect up to 10 subsequent lines, skipping blank lines (OCR sometimes
     # inserts blank lines mid-citation).  Stop only at an ISBN line.
-    citation_parts = [re.sub(r'^' + re.escape(sign) + r'\s*', '', stripped[record_idx]).strip()]
+    # When the record line was found via _SIGN_LOOSE, use the pre-captured content
+    # directly (it already excludes any leading № or sign prefix).
+    if loose_citation_text is not None:
+        first_citation = loose_citation_text
+    else:
+        first_citation = re.sub(r'^' + re.escape(sign) + r'\s*', '', stripped[record_idx]).strip()
+    citation_parts = [first_citation]
     for i in range(record_idx + 1, min(record_idx + 10, len(stripped))):
         if stripped[i] and _ISBN.search(stripped[i]):
             break

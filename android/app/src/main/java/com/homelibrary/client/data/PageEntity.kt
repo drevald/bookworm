@@ -27,6 +27,7 @@ data class PageEntity(
 
 enum class PageType {
     COVER,
+    TITLE_PAGE,
     INFO_PAGE,
     BARCODE,
     OTHER

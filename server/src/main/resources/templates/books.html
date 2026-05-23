@@ -16,6 +16,10 @@
         </header>
 
         <main>
+            <div th:if="${ocrServiceDown}" class="alert alert-error">
+                ⚠️ OCR service is unavailable — uploaded books will not be processed until it comes back online.
+            </div>
+
             <div class="books-header">
                 <h2>All Books</h2>
                 <div class="header-actions">

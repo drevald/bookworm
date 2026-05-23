@@ -122,6 +122,7 @@ class BookEditActivity : AppCompatActivity() {
         // Setup action buttons
         binding.backButton.setOnClickListener { onBackPressedDispatcher.onBackPressed() }
         binding.addCoverButton.setOnClickListener { capturePhoto(PageType.COVER) }
+        binding.addTitlePageButton.setOnClickListener { capturePhoto(PageType.TITLE_PAGE) }
         binding.addInfoButton.setOnClickListener { capturePhoto(PageType.INFO_PAGE) }
         binding.addBarcodeButton.setOnClickListener { capturePhoto(PageType.BARCODE) }
         binding.addPageButton.setOnClickListener { capturePhoto(PageType.OTHER) }
@@ -170,6 +171,7 @@ class BookEditActivity : AppCompatActivity() {
         val pageTypeNames = pageTypes.map { type ->
             when (type) {
                 PageType.COVER -> "Cover"
+                PageType.TITLE_PAGE -> "Title Page"
                 PageType.INFO_PAGE -> "Info Page"
                 PageType.BARCODE -> "Barcode"
                 PageType.OTHER -> "Other Page"
@@ -231,15 +233,16 @@ class BookEditActivity : AppCompatActivity() {
             val bookWithPages = repository.getBookWithPages(bookId)
             if (bookWithPages != null) {
                 // Validate required pages: cover always required;
-                // info page required only when there's no barcode.
+                // a title page, info page, or barcode is required for metadata extraction.
                 val hasCover = bookWithPages.pages.any { it.type == PageType.COVER }
+                val hasTitlePage = bookWithPages.pages.any { it.type == PageType.TITLE_PAGE }
                 val hasInfo = bookWithPages.pages.any { it.type == PageType.INFO_PAGE }
                 val hasBarcode = bookWithPages.pages.any { it.type == PageType.BARCODE }
 
-                if (!hasCover || (!hasInfo && !hasBarcode)) {
+                if (!hasCover || (!hasTitlePage && !hasInfo && !hasBarcode)) {
                     val missing = mutableListOf<String>()
                     if (!hasCover) missing.add("cover")
-                    if (!hasInfo && !hasBarcode) missing.add("info page or barcode")
+                    if (!hasTitlePage && !hasInfo && !hasBarcode) missing.add("title/info page or barcode")
                     Toast.makeText(
                         this@BookEditActivity,
                         "Missing: ${missing.joinToString(", ")}",

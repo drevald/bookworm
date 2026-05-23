@@ -46,6 +46,7 @@ class BookServiceClient(private val host: String, private val port: Int) {
     fun uploadBook(
         context: Context,
         coverUri: Uri,
+        titleUris: List<Uri> = emptyList(),
         infoUris: List<Uri>,
         barcodeUri: Uri? = null,
         language: String = "rus"
@@ -71,10 +72,17 @@ class BookServiceClient(private val host: String, private val port: Int) {
         }
 
         try {
-            Log.d(TAG, "Uploading cover, ${infoUris.size} info page(s), barcode=${barcodeUri != null}")
+            Log.d(TAG, "Uploading cover, ${titleUris.size} title page(s), ${infoUris.size} info page(s), barcode=${barcodeUri != null}")
 
             // Build list of PageImages
             val pageImages = mutableListOf<PageImage>()
+
+            // Add all title pages
+            titleUris.forEachIndexed { index, titleUri ->
+                Log.d(TAG, "Loading title page ${index + 1}/${titleUris.size}")
+                val pageImage = loadImage(context, titleUri, ImageType.TITLE_PAGE)
+                pageImages.add(pageImage)
+            }
 
             // Add all info pages
             infoUris.forEachIndexed { index, infoUri ->

@@ -32,6 +32,7 @@ enum ImageType {
   BACK = 2;
   INFO_PAGE = 3;
   BARCODE = 4;
+  TITLE_PAGE = 5;
 }
 
 message UploadBookResponse {

@@ -81,6 +81,11 @@ class BookMetadata(BaseModel):
 # ENDPOINT
 # ========================================
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.post("/extract", response_model=BookMetadata)
 async def extract_metadata(req: OCRRequest):
     try:
@@ -100,7 +105,7 @@ async def extract_metadata(req: OCRRequest):
             # Two-pass Russian OCR: preprocessed full page + raw catalog crop
             page_text = ocr_info_page(img) if req.language == "rus" else ocr_image(img, req.language)
             ocr_info += f"=== INFO PAGE {i} ===\n{page_text}\n"
-            # English OCR: strip-scan for ISBN (full-image OCR stops mid-page on tall images)
+# English OCR: strip-scan for ISBN (full-image OCR stops mid-page on tall images)
             isbn_line = ocr_isbn_from_image(img)
             if isbn_line:
                 ocr_eng += f"=== INFO PAGE {i} ISBN ===\n{isbn_line}\n"

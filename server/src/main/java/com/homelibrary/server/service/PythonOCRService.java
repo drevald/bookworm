@@ -41,6 +41,9 @@ public class PythonOCRService {
         @JsonProperty("info_images")
         private List<String> infoImages;
 
+        @JsonProperty("title_images")
+        private List<String> titleImages;
+
         @JsonProperty("back_image")
         private String backImage;
 
@@ -97,7 +100,7 @@ public class PythonOCRService {
     /**
      * Extract metadata from book images using Python OCR service
      */
-    public ParsedBookData extractMetadata(byte[] coverImage, List<byte[]> infoImages, byte[] backImage, byte[] barcodeImage, String language, String gostParser) {
+    public ParsedBookData extractMetadata(byte[] coverImage, List<byte[]> titleImages, List<byte[]> infoImages, byte[] backImage, byte[] barcodeImage, String language, String gostParser) {
         try {
             log.info("Calling Python OCR service at: {}", ocrServiceUrl);
 
@@ -109,6 +112,15 @@ public class PythonOCRService {
 
             if (coverImage != null && coverImage.length > 0) {
                 request.setCoverImage(Base64.getEncoder().encodeToString(coverImage));
+            }
+
+            if (titleImages != null && !titleImages.isEmpty()) {
+                List<String> encoded = new ArrayList<>();
+                for (byte[] img : titleImages) {
+                    if (img != null && img.length > 0) encoded.add(Base64.getEncoder().encodeToString(img));
+                }
+                request.setTitleImages(encoded);
+                log.info("Sending {} title page images to OCR service", encoded.size());
             }
 
             if (infoImages != null && !infoImages.isEmpty()) {

@@ -664,3 +664,16 @@ footer {
 .btn-secondary:hover {
     background: #5a6268;
 }
+
+.alert {
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-weight: 500;
+}
+
+.alert-error {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+}

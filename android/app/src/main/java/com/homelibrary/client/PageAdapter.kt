@@ -39,6 +39,7 @@ class PageAdapter(
             // Set page type label with numbering for info pages
             binding.pageTypeLabel.text = when (page.type) {
                 PageType.COVER -> "COVER"
+                PageType.TITLE_PAGE -> "TITLE PAGE"
                 PageType.INFO_PAGE -> {
                     // Count which info page this is
                     val infoPageNumber = currentList

@@ -83,6 +83,7 @@ public class BookController {
         model.addAttribute("view", view != null ? view : "grid");
         model.addAttribute("sortBy", sortBy);
         model.addAttribute("sortDir", sortDir);
+        model.addAttribute("ocrServiceDown", !pythonOCRService.isHealthy());
 
         return "books";
     }
