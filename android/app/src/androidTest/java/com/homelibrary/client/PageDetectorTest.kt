@@ -13,9 +13,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import android.content.ContentValues
 import android.content.Context
-import java.io.File
-import java.io.FileOutputStream
+import android.provider.MediaStore
 import kotlin.math.sqrt
 
 /**
@@ -101,7 +101,7 @@ class PageDetectorTest {
         for (y in 0 until bitmap.height) {
             for (x in 0 until bitmap.width) {
                 val px = bitmap.getPixel(x, y)
-                if (Color.red(px) > 150 && Color.green(px) < 80 && Color.blue(px) < 80) {
+                if (Color.red(px) > 200 && Color.green(px) < 60 && Color.blue(px) < 60) {
                     val sum = x + y; val dif = x - y
                     if (sum < tlVal) { tlVal = sum; tlPt = PointF(x.toFloat(), y.toFloat()) }
                     if (dif > trVal) { trVal = dif; trPt = PointF(x.toFloat(), y.toFloat()) }
@@ -161,7 +161,6 @@ class PageDetectorTest {
 
         val stroke = src.width * 0.006f
         val dot    = src.width * 0.018f
-        if (expected != null) drawQuad(expected, Color.RED,   stroke * 0.7f)
         drawQuad(detected, Color.GREEN, stroke)
         drawDots(detected, Color.GREEN, dot)
 
@@ -169,8 +168,18 @@ class PageDetectorTest {
     }
 
     private fun saveCropped(bitmap: Bitmap, fileName: String) {
-        val file = File("/sdcard/Download/$fileName")
-        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return
+        ctx.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        values.clear()
+        values.put(MediaStore.Downloads.IS_PENDING, 0)
+        ctx.contentResolver.update(uri, values, null, null)
+        android.util.Log.i("PageDetectorTest", "Saved to Downloads: $fileName")
     }
 
     private fun dist(a: PointF, b: PointF): Float {

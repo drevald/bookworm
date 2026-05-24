@@ -1212,7 +1212,7 @@ def _parse_structured(text: str) -> dict:
     # Handles OCR substitutions like "М!7" (space→!) or "Ч-49" (hyphen), and
     # the common "№М17 Заглавие..." variant where № is prepended by the OCR engine.
     _SIGN_LOOSE = re.compile(
-        r'^[№]?([А-ЯЁа-яёA-Za-z]{1,2}[\-\s!.,]*\d{1,3})\s+(.{5,})',
+        r'^[№]?([А-ЯЁа-яёA-Za-z\\/|]{1,2}[\-\s!.,]*\d{1,3})\s+(.{5,})',
         re.UNICODE
     )
 
@@ -1282,6 +1282,28 @@ def _parse_structured(text: str) -> dict:
                 record_idx = i
                 loose_citation_text = m.group(2)  # already stripped of sign prefix
                 break
+
+    if record_idx is None and sign is not None:
+        # Last-resort fallback: digit-anchored mid-line search.
+        # When the page layout causes PSM 3 to merge the catalog block and the
+        # citation into one long line (e.g. "ББК…\ 89Львов Н.А.\ 89 Заглавие…"),
+        # the авторский знак is not at the line start so _SIGN_LOOSE never matches.
+        # Using only the digit portion (known to be correct from the catalog block)
+        # lets us find the sign even when the preceding letter was corrupted to
+        # "\", "|", etc.
+        digit_m = re.search(r'\d+', sign)
+        if digit_m:
+            digit_part = re.escape(digit_m.group())
+            mid_re = re.compile(
+                r'[А-ЯЁа-яёA-Za-z\\/|]{1,2}[\-\s]?' + digit_part + r'\s+([А-ЯЁ].{4,})',
+                re.UNICODE
+            )
+            for i, line in enumerate(stripped):
+                m = mid_re.search(line)
+                if m:
+                    record_idx = i
+                    loose_citation_text = m.group(1)
+                    break
 
     if record_idx is None:
         return data

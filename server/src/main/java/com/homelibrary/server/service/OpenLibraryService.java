@@ -35,6 +35,9 @@ public class OpenLibraryService implements IsbnLookupService {
     public int priority() { return 4; }
 
     @Override
+    public boolean supports(String lang) { return !"rus".equalsIgnoreCase(lang); }
+
+    @Override
     public Optional<BookMetadataDto> lookup(String isbn) {
         try {
             String url = API_URL.replace("{isbn}", isbn);

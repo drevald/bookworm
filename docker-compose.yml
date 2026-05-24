@@ -45,6 +45,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: bookworm
       # Python OCR Service
       OCR_SERVICE_URL: http://ocr-service:5000
+      # Amazon PA API (optional — leave blank to skip)
+      isbn.providers.amazon.access-key: ${AMAZON_PA_ACCESS_KEY:-}
+      isbn.providers.amazon.secret-key: ${AMAZON_PA_SECRET_KEY:-}
+      isbn.providers.amazon.partner-tag: ${AMAZON_PA_PARTNER_TAG:-}
       # JVM remote debugging
       JAVA_TOOL_OPTIONS: >
         -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005    

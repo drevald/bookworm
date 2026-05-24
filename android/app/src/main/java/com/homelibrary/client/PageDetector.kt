@@ -4,19 +4,30 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PointF
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
- * Detects the corners of a book page (bright rectangular region) in a photograph.
+ * Detects the corners of a book page in a photograph.
  *
  * Algorithm:
- *  1. Downsample to ≤400 px for speed.
- *  2. Convert to grayscale and compute Otsu threshold.
- *  3. For each column/row, find the outermost "paper" pixel (gray > threshold).
- *  4. Fit lines through the top/bottom/left/right boundary points (least squares).
- *  5. Intersect the 4 lines → 4 corners.
- *  6. Scale corners back to original bitmap coordinates.
+ *  1. Downsample to ≤600 px for speed.
+ *  2. Compute Sobel gradients (Gx, Gy).
+ *  3. For each of the four edges, scan outward→inward looking for the first
+ *     row or column that has a LONG continuous run of directional edge pixels.
+ *     This distinguishes the page boundary (one long edge spanning the full
+ *     image width / height) from background texture or text (short isolated
+ *     strokes).  Gaps of up to MAX_GAP pixels are tolerated to handle JPEG
+ *     compression artefacts and minor lighting irregularities.
+ *  4. Collect edge pixels in a narrow band around the found row/column.
+ *  5. Remove outliers (MAD) and fit a line through each band.
+ *  6. Intersect the four lines → four corners.
+ *  7. Scale corners back to original bitmap coordinates.
  */
 object PageDetector {
+
+    private const val MAX_GAP = 8       // px gap allowed inside a "run"
+    private const val MIN_RUN_FRAC = 0.20f  // run must span ≥ 20 % of scan axis
+    private const val BAND_FRAC = 0.04f    // collect points within ±4 % of image size
 
     /**
      * Returns [TL, TR, BR, BL] in original bitmap pixel coordinates,
@@ -37,60 +48,56 @@ object PageDetector {
         }
         small.recycle()
 
-        // Try detection at multiple thresholds: Otsu, then looser values
-        val otsu = otsuThreshold(gray)
-        val candidates = listOf(otsu, (otsu * 0.7).toInt().coerceIn(10, 240),
-                                (otsu * 1.3).toInt().coerceIn(10, 240))
-
-        for (threshold in candidates) {
-            val result = tryDetect(gray, sw, sh, threshold, scale)
-            if (result != null) return result
-        }
-        return null
-    }
-
-    private fun tryDetect(gray: IntArray, sw: Int, sh: Int, threshold: Int, scale: Float): Array<PointF>? {
-        val step = maxOf(1, minOf(sw, sh) / 80)
-        val topPts  = mutableListOf<PointF>()
-        val botPts  = mutableListOf<PointF>()
-        val leftPts = mutableListOf<PointF>()
-        val rightPts = mutableListOf<PointF>()
-
-        // Trim 3% from edges to ignore vignetting / camera borders
-        val marginX = (sw * 0.03f).toInt()
-        val marginY = (sh * 0.03f).toInt()
-
-        for (x in marginX until sw - marginX step step) {
-            var topY = -1; var botY = -1
-            for (y in marginY until sh - marginY) {
-                if (gray[y * sw + x] > threshold) { if (topY < 0) topY = y; botY = y }
+        // ── Sobel gradients ──────────────────────────────────────────────────
+        val gx = IntArray(sw * sh)
+        val gy = IntArray(sw * sh)
+        for (y in 1 until sh - 1) {
+            for (x in 1 until sw - 1) {
+                val g = { dy: Int, dx: Int -> gray[(y + dy) * sw + (x + dx)] }
+                gx[y * sw + x] = (g(-1, 1) + 2 * g(0, 1) + g(1, 1)) -
+                                  (g(-1,-1) + 2 * g(0,-1) + g(1,-1))
+                gy[y * sw + x] = (g(1,-1) + 2 * g(1, 0) + g(1, 1)) -
+                                  (g(-1,-1) + 2 * g(-1,0) + g(-1,1))
             }
-            if (topY >= 0) topPts.add(PointF(x.toFloat(), topY.toFloat()))
-            if (botY >= 0) botPts.add(PointF(x.toFloat(), botY.toFloat()))
-        }
-        for (y in marginY until sh - marginY step step) {
-            var leftX = -1; var rightX = -1
-            for (x in marginX until sw - marginX) {
-                if (gray[y * sw + x] > threshold) { if (leftX < 0) leftX = x; rightX = x }
-            }
-            if (leftX  >= 0) leftPts.add(PointF(leftX.toFloat(), y.toFloat()))
-            if (rightX >= 0) rightPts.add(PointF(rightX.toFloat(), y.toFloat()))
         }
 
-        if (topPts.size < 3 || botPts.size < 3 ||
-            leftPts.size < 3 || rightPts.size < 3) return null
+        // ── Edge magnitude threshold (top 10 %) ─────────────────────────────
+        val mags = IntArray(sw * sh) { i ->
+            sqrt(gx[i].toFloat() * gx[i] + gy[i].toFloat() * gy[i].toDouble()).toInt()
+        }
+        val sorted = mags.copyOf().also { it.sort() }
+        val thresh = sorted[(sorted.size * 0.90).toInt()].coerceAtLeast(20)
 
-        val topLine   = fitH(topPts)   ?: return null
-        val botLine   = fitH(botPts)   ?: return null
-        val leftLine  = fitV(leftPts)  ?: return null
-        val rightLine = fitV(rightPts) ?: return null
+        // ── Find each boundary row / column ──────────────────────────────────
+        val margin = 0.06f  // skip outer 6 % to avoid image-border artefacts
+
+        val topRow   = findEdgeRow(gy, mags, thresh, sw, sh, fromTop  = true,  margin) ?: return null
+        val botRow   = findEdgeRow(gy, mags, thresh, sw, sh, fromTop  = false, margin) ?: return null
+        val leftCol  = findEdgeCol(gx, mags, thresh, sw, sh, fromLeft = true,  margin) ?: return null
+        val rightCol = findEdgeCol(gx, mags, thresh, sw, sh, fromLeft = false, margin) ?: return null
+
+        // ── Collect band of points and fit lines ─────────────────────────────
+        val bandY = (sh * BAND_FRAC).toInt().coerceAtLeast(3)
+        val bandX = (sw * BAND_FRAC).toInt().coerceAtLeast(3)
+
+        val topPts   = hBandPoints(gy, mags, thresh, sw, sh, topRow,   bandY, positive = true)
+        val botPts   = hBandPoints(gy, mags, thresh, sw, sh, botRow,   bandY, positive = false)
+        val leftPts  = vBandPoints(gx, mags, thresh, sw, sh, leftCol,  bandX, positive = true)
+        val rightPts = vBandPoints(gx, mags, thresh, sw, sh, rightCol, bandX, positive = false)
+
+        if (topPts.size < 5 || botPts.size < 5 ||
+            leftPts.size < 5 || rightPts.size < 5) return null
+
+        val topLine   = fitH(filterOutliers(topPts,   byY = true))  ?: return null
+        val botLine   = fitH(filterOutliers(botPts,   byY = true))  ?: return null
+        val leftLine  = fitV(filterOutliers(leftPts,  byY = false)) ?: return null
+        val rightLine = fitV(filterOutliers(rightPts, byY = false)) ?: return null
 
         val tl = intersect(topLine, leftLine)  ?: return null
         val tr = intersect(topLine, rightLine) ?: return null
         val br = intersect(botLine, rightLine) ?: return null
         val bl = intersect(botLine, leftLine)  ?: return null
 
-        // Sanity: quad must cover at least 10% of the image and corners must be in order
         if (quadArea(tl, tr, br, bl) < sw * sh * 0.10f) return null
         if (tl.x >= tr.x || bl.x >= br.x || tl.y >= bl.y || tr.y >= br.y) return null
 
@@ -103,35 +110,144 @@ object PageDetector {
         )
     }
 
-    // ── Otsu threshold ──────────────────────────────────────────────────────
+    // ── Edge-row finder ──────────────────────────────────────────────────────
 
-    private fun otsuThreshold(gray: IntArray): Int {
-        val hist = IntArray(256)
-        for (v in gray) hist[v]++
-        val total = gray.size
-        var sumAll = 0L
-        for (i in 0..255) sumAll += i.toLong() * hist[i]
-        var sumB = 0L; var wB = 0; var maxVar = 0.0; var best = 128
-        for (t in 0..255) {
-            wB += hist[t]; if (wB == 0) continue
-            val wF = total - wB; if (wF == 0) break
-            sumB += t.toLong() * hist[t]
-            val mB = sumB.toDouble() / wB
-            val mF = (sumAll - sumB).toDouble() / wF
-            val v  = wB.toDouble() * wF * (mB - mF) * (mB - mF)
-            if (v > maxVar) { maxVar = v; best = t }
+    /**
+     * Scans rows from the outer edge inward.
+     * Returns the first row whose longest run of qualifying horizontal-gradient
+     * pixels spans at least [MIN_RUN_FRAC] × sw.
+     *
+     * Qualifying pixel: magnitude > thresh AND Gy sign matches page–background
+     * transition direction (positive → dark above / light below = page top;
+     * negative → light above / dark below = page bottom).
+     */
+    private fun findEdgeRow(
+        gy: IntArray, mags: IntArray, thresh: Int,
+        sw: Int, sh: Int, fromTop: Boolean, margin: Float
+    ): Int? {
+        val mx = (sw * margin).toInt()
+        val my = (sh * margin).toInt()
+        val xStart = mx; val xEnd = sw - mx
+        val minRun = ((xEnd - xStart) * MIN_RUN_FRAC).toInt()
+        val yRange = if (fromTop) my until sh / 2 else (sh - my - 1) downTo sh / 2
+
+        for (y in yRange) {
+            if (longestRun(y, xStart, xEnd, sw, mags, gy, thresh,
+                    checkDir = { g -> if (fromTop) g > 0 else g < 0 }) >= minRun)
+                return y
+        }
+        return null
+    }
+
+    /**
+     * Same idea but scans columns for vertical-gradient (left / right) edges.
+     * Qualifying pixel: Gx sign matches transition direction.
+     */
+    private fun findEdgeCol(
+        gx: IntArray, mags: IntArray, thresh: Int,
+        sw: Int, sh: Int, fromLeft: Boolean, margin: Float
+    ): Int? {
+        val mx = (sw * margin).toInt()
+        val my = (sh * margin).toInt()
+        val yStart = my; val yEnd = sh - my
+        val minRun = ((yEnd - yStart) * MIN_RUN_FRAC).toInt()
+        val xRange = if (fromLeft) mx until sw / 2 else (sw - mx - 1) downTo sw / 2
+
+        for (x in xRange) {
+            if (longestRunCol(x, yStart, yEnd, sw, mags, gx, thresh,
+                    checkDir = { g -> if (fromLeft) g > 0 else g < 0 }) >= minRun)
+                return x
+        }
+        return null
+    }
+
+    /** Longest run (with gap tolerance) of qualifying pixels along a row. */
+    private fun longestRun(
+        y: Int, xStart: Int, xEnd: Int, sw: Int,
+        mags: IntArray, gradient: IntArray, thresh: Int,
+        checkDir: (Int) -> Boolean
+    ): Int {
+        var run = 0; var gap = 0; var best = 0
+        for (x in xStart until xEnd) {
+            val i = y * sw + x
+            if (mags[i] > thresh && checkDir(gradient[i])) {
+                run++; gap = 0; best = maxOf(best, run)
+            } else {
+                if (++gap > MAX_GAP) run = 0
+            }
         }
         return best
     }
 
+    /** Longest run along a column. */
+    private fun longestRunCol(
+        x: Int, yStart: Int, yEnd: Int, sw: Int,
+        mags: IntArray, gradient: IntArray, thresh: Int,
+        checkDir: (Int) -> Boolean
+    ): Int {
+        var run = 0; var gap = 0; var best = 0
+        for (y in yStart until yEnd) {
+            val i = y * sw + x
+            if (mags[i] > thresh && checkDir(gradient[i])) {
+                run++; gap = 0; best = maxOf(best, run)
+            } else {
+                if (++gap > MAX_GAP) run = 0
+            }
+        }
+        return best
+    }
+
+    // ── Band point collectors ────────────────────────────────────────────────
+
+    private fun hBandPoints(
+        gy: IntArray, mags: IntArray, thresh: Int,
+        sw: Int, sh: Int, centerY: Int, band: Int, positive: Boolean
+    ): List<PointF> {
+        val pts = mutableListOf<PointF>()
+        for (y in maxOf(0, centerY - band)..minOf(sh - 1, centerY + band)) {
+            for (x in 0 until sw) {
+                val i = y * sw + x
+                if (mags[i] > thresh && (if (positive) gy[i] > 0 else gy[i] < 0))
+                    pts.add(PointF(x.toFloat(), y.toFloat()))
+            }
+        }
+        return pts
+    }
+
+    private fun vBandPoints(
+        gx: IntArray, mags: IntArray, thresh: Int,
+        sw: Int, sh: Int, centerX: Int, band: Int, positive: Boolean
+    ): List<PointF> {
+        val pts = mutableListOf<PointF>()
+        for (y in 0 until sh) {
+            for (x in maxOf(0, centerX - band)..minOf(sw - 1, centerX + band)) {
+                val i = y * sw + x
+                if (mags[i] > thresh && (if (positive) gx[i] > 0 else gx[i] < 0))
+                    pts.add(PointF(x.toFloat(), y.toFloat()))
+            }
+        }
+        return pts
+    }
+
+    // ── Outlier filtering (MAD) ──────────────────────────────────────────────
+
+    private fun filterOutliers(pts: List<PointF>, byY: Boolean): List<PointF> {
+        val vals = if (byY) pts.map { it.y } else pts.map { it.x }
+        val sorted = vals.sorted()
+        val median = sorted[sorted.size / 2]
+        val mad = vals.map { abs(it - median) }.sorted()
+            .let { it[it.size / 2] }.coerceAtLeast(1f)
+        val threshold = 3f * mad
+        return pts.filter { abs((if (byY) it.y else it.x) - median) <= threshold }
+    }
+
     // ── Line fitting ─────────────────────────────────────────────────────────
 
-    // Horizontal-ish edge: y = a*x + b
-    private data class HLine(val a: Double, val b: Double)
-    // Vertical-ish edge:   x = a*y + b
-    private data class VLine(val a: Double, val b: Double)
+    private data class HLine(val a: Double, val b: Double)   // y = a·x + b
+    private data class VLine(val a: Double, val b: Double)   // x = a·y + b
 
     private fun fitH(pts: List<PointF>): HLine? {
+        if (pts.size < 2) return null
         val n = pts.size.toDouble()
         var sx = 0.0; var sy = 0.0; var sxx = 0.0; var sxy = 0.0
         for (p in pts) { sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y }
@@ -142,6 +258,7 @@ object PageDetector {
     }
 
     private fun fitV(pts: List<PointF>): VLine? {
+        if (pts.size < 2) return null
         val n = pts.size.toDouble()
         var sx = 0.0; var sy = 0.0; var syy = 0.0; var sxy = 0.0
         for (p in pts) { sx += p.x; sy += p.y; syy += p.y * p.y; sxy += p.x * p.y }
@@ -151,7 +268,6 @@ object PageDetector {
         return VLine(a, (sx - a * sy) / n)
     }
 
-    // Intersect y = a1*x + b1  with  x = a2*y + b2
     private fun intersect(h: HLine, v: VLine): PointF? {
         val d = 1.0 - h.a * v.a
         if (abs(d) < 1e-9) return null
@@ -160,7 +276,6 @@ object PageDetector {
         return PointF(x.toFloat(), y.toFloat())
     }
 
-    // Shoelace area of a quadrilateral
     private fun quadArea(tl: PointF, tr: PointF, br: PointF, bl: PointF): Float {
         val pts = arrayOf(tl, tr, br, bl)
         var area = 0f

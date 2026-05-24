@@ -43,10 +43,12 @@ public class BookProcessingService {
 
     /** Maps URL-safe source keys (from the UI) to provider display names. */
     private static final Map<String, String> SOURCE_KEY_MAP = Map.of(
-            "rsl",         "РГБ",
-            "neb",         "НЭБ",
-            "google",      "Google Books",
-            "openlibrary", "Open Library"
+            "rsl",             "РГБ",
+            "neb",             "НЭБ",
+            "amazon",          "Amazon",
+            "amazon_scraper",  "Amazon (scraper)",
+            "google",          "Google Books",
+            "openlibrary",     "Open Library"
     );
 
     /** Source key that routes to the ANTLR4 GOST bibliographic parser. */
@@ -156,7 +158,7 @@ public class BookProcessingService {
             if (!forceOcr && !forceGost && isValidIsbn(isbnForLookup)) {
                 statusService.update(bookId, BookProcessingStatusService.Stage.PROVIDER_LOOKUP, 55, "Looking up metadata...");
                 if (source == null || "auto".equalsIgnoreCase(source)) {
-                    providerResult = tryIsbnProviders(isbnForLookup);
+                    providerResult = tryIsbnProviders(isbnForLookup, language);
                 } else {
                     providerResult = trySpecificProvider(isbnForLookup, source);
                 }
@@ -225,12 +227,28 @@ public class BookProcessingService {
         }
     }
 
+    // ── Public helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Run the full provider chain for a given ISBN-10 or ISBN-13 and return
+     * the best result, or empty when no provider has the book.
+     * Used by the ISBN-preview endpoint for foreign-book lookup without OCR.
+     */
+    public Optional<BookMetadataDto> lookupByIsbn(String isbn, String language) {
+        if (!isValidIsbn(isbn)) return Optional.empty();
+        return tryIsbnProviders(isbn, language).map(ProviderLookupResult::dto);
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    private Optional<ProviderLookupResult> tryIsbnProviders(String isbn) {
+    private Optional<ProviderLookupResult> tryIsbnProviders(String isbn, String language) {
         List<IsbnLookupService> sorted = isbnProviders.stream()
+                .filter(p -> p.supports(language))
                 .sorted(Comparator.comparingInt(IsbnLookupService::priority))
                 .toList();
+
+        log.info("Provider chain for language='{}': {}",
+                language, sorted.stream().map(IsbnLookupService::providerName).toList());
 
         for (IsbnLookupService provider : sorted) {
             log.info("Trying ISBN provider '{}' for ISBN {}", provider.providerName(), isbn);
@@ -248,7 +266,7 @@ public class BookProcessingService {
         String targetName = SOURCE_KEY_MAP.get(sourceKey.toLowerCase());
         if (targetName == null) {
             log.warn("Unknown source key '{}', falling back to auto", sourceKey);
-            return tryIsbnProviders(isbn);
+            return tryIsbnProviders(isbn, null);
         }
         return isbnProviders.stream()
                 .filter(p -> p.providerName().equals(targetName))

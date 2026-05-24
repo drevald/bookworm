@@ -47,6 +47,7 @@ public class NebService implements IsbnLookupService {
 
     @Override
     public int priority() { return 2; }
+    @Override public boolean supports(String lang) { return "rus".equalsIgnoreCase(lang); }
 
     @Override
     public Optional<BookMetadataDto> lookup(String isbn) {

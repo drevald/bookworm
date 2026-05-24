@@ -126,6 +126,28 @@ public class BookController {
         }
     }
 
+    /**
+     * Preview book metadata from external ISBN providers without uploading images.
+     * Accepts ISBN-10 or ISBN-13 (digits only, no hyphens).
+     * Useful for foreign books where the ISBN is known from Amazon or the back cover.
+     *
+     * <p>Example: {@code GET /api/isbn-preview?isbn=1568302835}</p>
+     */
+    @GetMapping("/api/isbn-preview")
+    @ResponseBody
+    public ResponseEntity<Object> isbnPreview(
+            @RequestParam String isbn,
+            @RequestParam(required = false) String language) {
+        String digits = isbn.replaceAll("[^0-9Xx]", "").toUpperCase();
+        if (digits.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "isbn parameter is required"));
+        }
+        return bookProcessingService.lookupByIsbn(digits, language)
+                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "No metadata found for ISBN: " + digits)));
+    }
+
     @GetMapping("/api/books")
     @ResponseBody
     public List<Book> getAllBooks() {

@@ -69,6 +69,7 @@ public class RslService implements IsbnLookupService {
 
     @Override
     public int priority() { return 1; }
+    @Override public boolean supports(String lang) { return "rus".equalsIgnoreCase(lang); }
 
     // ── Public entry point ─────────────────────────────────────────────────────
 
@@ -345,7 +346,7 @@ public class RslService implements IsbnLookupService {
         // ── Publisher + Year from Выходные данные ─────────────────────────
         String vydaniya = fields.get("Выходные данные");
         if (vydaniya != null && !vydaniya.isBlank()) {
-            parsePublisherYear(vydaniya, dto);
+            parsePublisherYear(stripRslNoise(vydaniya), dto);
         }
 
         if (!dto.hasTitle()) {
@@ -358,21 +359,38 @@ public class RslService implements IsbnLookupService {
 
     // ── Parsing helpers ────────────────────────────────────────────────────────
 
-    /** Strip responsibility statement (after " / ") and normalize whitespace. */
+    /**
+     * Strip MARC catalog noise from a title field:
+     *   "Заглавие = Параллельное заглавие [Текст] / Ответственность РГБ"
+     *   → "Заглавие"
+     */
     private String cleanTitle(String raw) {
+        // Strip parallel title (everything from " = " onward)
+        int eq = raw.indexOf(" = ");
+        if (eq > 0) raw = raw.substring(0, eq);
+        // Strip responsibility statement (everything from " / " onward)
         int slash = raw.indexOf(" / ");
         if (slash > 0) raw = raw.substring(0, slash);
+        // Strip medium designators like [Текст], [Text], [Электронный ресурс]
+        raw = raw.replaceAll("\\s*\\[[^\\]]{1,40}\\]", "");
+        // Strip trailing RSL source annotation
+        raw = stripRslNoise(raw);
         return raw.trim().replaceAll("\\s+", " ");
     }
 
-    /** Split authors on ";" or newlines; return at least the raw string if nothing splits. */
+    /** Split authors on ";" or newlines; strip RSL noise from each name. */
     private List<String> parseAuthors(String raw) {
         List<String> result = new ArrayList<>();
         for (String part : raw.split("[;\n]+")) {
-            String name = part.trim();
+            String name = stripRslNoise(part.trim());
             if (!name.isBlank() && name.length() > 2) result.add(name);
         }
-        return result.isEmpty() ? List.of(raw.trim()) : result;
+        return result.isEmpty() ? List.of(stripRslNoise(raw.trim())) : result;
+    }
+
+    /** Remove trailing " РГБ", " НЭБ", or similar catalog source annotations. */
+    private String stripRslNoise(String s) {
+        return s.replaceAll("\\s+(?:РГБ|НЭБ|RSL)\\s*$", "").trim();
     }
 
     /**
