@@ -55,6 +55,10 @@ dependencies {
 
     // HTML parsing for RSL catalog scraping
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Bootstrap 5 served as a WebJar
+    implementation("org.webjars:bootstrap:5.3.3")
+    implementation("org.webjars:webjars-locator-core:0.55")
 }
 
 protobuf {

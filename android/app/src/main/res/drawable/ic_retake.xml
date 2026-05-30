@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="40dp"
-    android:height="40dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Green circle with camera/retake icon -->
-    <path
-        android:fillColor="#4CAF50"
-        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M16,9h-1.5l-1,-1h-3l-1,1H8c-0.55,0 -1,0.45 -1,1v5c0,0.55 0.45,1 1,1h8c0.55,0 1,-0.45 1,-1v-5c0,-0.55 -0.45,-1 -1,-1zM12,14.5c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5 2.5,1.12 2.5,2.5 -1.12,2.5 -2.5,2.5z"/>
+    android:width="61dp"
+    android:height="67dp"
+    android:viewportWidth="61"
+    android:viewportHeight="67">
+    <group android:translateX="-288" android:translateY="-2">
+        <path android:fillColor="#FFFFFF" android:strokeColor="#000000" android:strokeWidth="4"
+            android:pathData="M299,2 L334,2 Q345,2 345,13 L345,54 Q345,65 334,65 L299,65 Q288,65 288,54 L288,13 Q288,2 299,2 Z"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="2"
+            android:pathData="M303,21 L330,21 L330,48 L303,48 Z"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="2"
+            android:pathData="M310,21 L324,21 L324,26 L310,26 Z"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="2"
+            android:pathData="M317,30 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"/>
+    </group>
 </vector>

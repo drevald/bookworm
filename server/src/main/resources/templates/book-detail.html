@@ -303,6 +303,8 @@
                 case 'INFO_PAGE':            return typeCount > 0 ? `Info Page ${typeCount + 1}` : 'Info Page';
                 case 'INFO_PAGE_PERSPECTIVE': return typeCount > 0 ? `Perspective Fix ${typeCount + 1}` : 'Perspective Fix';
                 case 'INFO_PAGE_DEWARPED':   return typeCount > 0 ? `Dewarped ${typeCount + 1}` : 'Dewarped';
+                case 'TITLE_PAGE':           return typeCount > 0 ? `Title Page ${typeCount + 1}` : 'Title Page';
+                case 'BARCODE':              return typeCount > 0 ? `Barcode ${typeCount + 1}` : 'Barcode';
                 default:                     return `Image ${index + 1}`;
             }
         }
@@ -359,6 +361,10 @@
                 }
             });
 
+            // Start on COVER image if one exists, otherwise index 0.
+            const coverIndex = imageTypes.indexOf('COVER');
+            showImage(coverIndex !== -1 ? coverIndex : 0);
+
             // Check if processing is still active on page load
             fetch(`/api/books/${bookId}/processing-status`)
                 .then(r => r.json())
@@ -408,7 +414,7 @@
                         class="clickable-image"
                         style="width: 300px; height: auto; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"
                         title="Click to enlarge" />
-                    <div id="imageLabel" class="image-label">Cover</div>
+                    <div id="imageLabel" class="image-label"></div>
                 </div>
                 <div th:if="${book.images.empty}" style="width: 300px; height: 400px; background-color: #f0f0f0; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; border-radius: 4px;">
                     <span style="font-size: 4em;">📖</span>
@@ -435,7 +441,7 @@
                     <span th:text="${book.title ?: 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['title'] != null}"
                           th:text="${fieldSources['title']}"
-                          th:classappend="${fieldSources['title'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['title'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['title'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['title'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          th:classappend="${fieldSources['title'] != null and #strings.contains(fieldSources['title'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['title'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['title'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['title'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -443,7 +449,7 @@
                     <span th:text="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['authors'] != null}"
                           th:text="${fieldSources['authors']}"
-                          th:classappend="${fieldSources['authors'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['authors'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['authors'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['authors'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          th:classappend="${fieldSources['authors'] != null and #strings.contains(fieldSources['authors'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['authors'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['authors'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['authors'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -454,7 +460,7 @@
                           th:text="'(barcode: ' + ${book.barcodeValue} + ')'"></span>
                     <span th:if="${fieldSources != null and fieldSources['isbn'] != null}"
                           th:text="${fieldSources['isbn']}"
-                          th:classappend="${fieldSources['isbn'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['isbn'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['isbn'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['isbn'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          th:classappend="${fieldSources['isbn'] != null and #strings.contains(fieldSources['isbn'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['isbn'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['isbn'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['isbn'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -462,7 +468,7 @@
                     <span th:text="${book.publisher != null ? book.publisher.name : 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['publisher'] != null}"
                           th:text="${fieldSources['publisher']}"
-                          th:classappend="${fieldSources['publisher'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['publisher'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['publisher'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['publisher'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          th:classappend="${fieldSources['publisher'] != null and #strings.contains(fieldSources['publisher'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['publisher'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['publisher'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['publisher'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -470,7 +476,7 @@
                     <span th:text="${book.publicationYear ?: 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['year'] != null}"
                           th:text="${fieldSources['year']}"
-                          th:classappend="${fieldSources['year'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['year'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['year'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['year'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
+                          th:classappend="${fieldSources['year'] != null and #strings.contains(fieldSources['year'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['year'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['year'] == 'Barcode'} ? 'field-source-barcode' : (${fieldSources['year'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider')))"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -478,7 +484,7 @@
                     <span th:text="${book.udk ?: 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['udk'] != null}"
                           th:text="${fieldSources['udk']}"
-                          th:classappend="${fieldSources['udk'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['udk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
+                          th:classappend="${fieldSources['udk'] != null and #strings.contains(fieldSources['udk'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['udk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -486,7 +492,7 @@
                     <span th:text="${book.bbk ?: 'Not available'}">Not available</span>
                     <span th:if="${fieldSources != null and fieldSources['bbk'] != null}"
                           th:text="${fieldSources['bbk']}"
-                          th:classappend="${fieldSources['bbk'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['bbk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
+                          th:classappend="${fieldSources['bbk'] != null and #strings.contains(fieldSources['bbk'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['bbk'] == 'GOST'} ? 'field-source-gost' : 'field-source-provider')"
                           class="field-source"></span>
                 </div>
                 <div style="margin-bottom: 15px;">
@@ -502,7 +508,7 @@
                     <strong>Annotation:</strong>
                     <span th:if="${fieldSources != null and fieldSources['annotation'] != null}"
                           th:text="${fieldSources['annotation']}"
-                          th:classappend="${fieldSources['annotation'] == 'OCR'} ? 'field-source-ocr' : (${fieldSources['annotation'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['annotation'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider'))"
+                          th:classappend="${fieldSources['annotation'] != null and #strings.contains(fieldSources['annotation'], 'OCR')} ? 'field-source-ocr' : (${fieldSources['annotation'] == 'GOST'} ? 'field-source-gost' : (${fieldSources['annotation'] == 'Manual'} ? 'field-source-manual' : 'field-source-provider'))"
                           class="field-source" style="vertical-align: baseline;"></span>
                     <div style="margin-top: 8px; padding: 12px; background-color: #f8f9fa; border-left: 3px solid #007bff; border-radius: 4px; line-height: 1.6;">
                         <span th:text="${book.annotation}">Not available</span>

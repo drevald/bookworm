@@ -11,23 +11,16 @@ import kotlin.math.sqrt
  *
  * Algorithm:
  *  1. Downsample to ≤600 px for speed.
- *  2. Compute Sobel gradients (Gx, Gy).
- *  3. For each of the four edges, scan outward→inward looking for the first
- *     row or column that has a LONG continuous run of directional edge pixels.
- *     This distinguishes the page boundary (one long edge spanning the full
- *     image width / height) from background texture or text (short isolated
- *     strokes).  Gaps of up to MAX_GAP pixels are tolerated to handle JPEG
- *     compression artefacts and minor lighting irregularities.
- *  4. Collect edge pixels in a narrow band around the found row/column.
- *  5. Remove outliers (MAD) and fit a line through each band.
- *  6. Intersect the four lines → four corners.
- *  7. Scale corners back to original bitmap coordinates.
+ *  2. Compute per-row and per-column average brightness profiles to robustly
+ *     locate the approximate page boundary (page is the bright region).
+ *  3. Collect Sobel-gradient edge pixels in a narrow band around each
+ *     approximate boundary position, keeping only pixels whose gradient
+ *     direction matches the expected page↔background transition.
+ *  4. Filter outliers (MAD) and fit a line through each of the four bands.
+ *  5. Intersect the four lines → four corners.
+ *  6. Scale corners back to original bitmap coordinates.
  */
 object PageDetector {
-
-    private const val MAX_GAP = 8       // px gap allowed inside a "run"
-    private const val MIN_RUN_FRAC = 0.20f  // run must span ≥ 20 % of scan axis
-    private const val BAND_FRAC = 0.04f    // collect points within ±4 % of image size
 
     /**
      * Returns [TL, TR, BR, BL] in original bitmap pixel coordinates,
@@ -60,30 +53,54 @@ object PageDetector {
                                   (g(-1,-1) + 2 * g(-1,0) + g(-1,1))
             }
         }
-
-        // ── Edge magnitude threshold (top 10 %) ─────────────────────────────
         val mags = IntArray(sw * sh) { i ->
             sqrt(gx[i].toFloat() * gx[i] + gy[i].toFloat() * gy[i].toDouble()).toInt()
         }
-        val sorted = mags.copyOf().also { it.sort() }
-        val thresh = sorted[(sorted.size * 0.90).toInt()].coerceAtLeast(20)
+        val sortedMags = mags.copyOf().also { it.sort() }
+        val edgeThresh = sortedMags[(sortedMags.size * 0.80).toInt()].coerceAtLeast(10)
 
-        // ── Find each boundary row / column ──────────────────────────────────
-        val margin = 0.06f  // skip outer 6 % to avoid image-border artefacts
+        // ── Brightness profiles ──────────────────────────────────────────────
+        // Row profile: average gray across the center 60% of columns.
+        // Bright rows → page interior; dim rows → background above/below.
+        val xL = sw / 5; val xR = sw * 4 / 5
+        val rowAvg = FloatArray(sh) { y ->
+            var s = 0
+            for (x in xL until xR) s += gray[y * sw + x]
+            s.toFloat() / (xR - xL)
+        }
 
-        val topRow   = findEdgeRow(gy, mags, thresh, sw, sh, fromTop  = true,  margin) ?: return null
-        val botRow   = findEdgeRow(gy, mags, thresh, sw, sh, fromTop  = false, margin) ?: return null
-        val leftCol  = findEdgeCol(gx, mags, thresh, sw, sh, fromLeft = true,  margin) ?: return null
-        val rightCol = findEdgeCol(gx, mags, thresh, sw, sh, fromLeft = false, margin) ?: return null
+        // Column profile: average gray across the center 60% of rows.
+        val yT = sh / 5; val yB = sh * 4 / 5
+        val colAvg = FloatArray(sw) { x ->
+            var s = 0
+            for (y in yT until yB) s += gray[y * sw + x]
+            s.toFloat() / (yB - yT)
+        }
 
-        // ── Collect band of points and fit lines ─────────────────────────────
-        val bandY = (sh * BAND_FRAC).toInt().coerceAtLeast(3)
-        val bandX = (sw * BAND_FRAC).toInt().coerceAtLeast(3)
+        val rowSmooth = smooth(rowAvg)
+        val colSmooth = smooth(colAvg)
 
-        val topPts   = hBandPoints(gy, mags, thresh, sw, sh, topRow,   bandY, positive = true)
-        val botPts   = hBandPoints(gy, mags, thresh, sw, sh, botRow,   bandY, positive = false)
-        val leftPts  = vBandPoints(gx, mags, thresh, sw, sh, leftCol,  bandX, positive = true)
-        val rightPts = vBandPoints(gx, mags, thresh, sw, sh, rightCol, bandX, positive = false)
+        // Threshold: 55 % of the peak (page) brightness.
+        val rowPeak = rowSmooth.max()!!
+        val colPeak = colSmooth.max()!!
+        val rowThresh = rowPeak * 0.55f
+        val colThresh = colPeak * 0.55f
+
+        // ── Approximate boundary positions from profiles ──────────────────────
+        val margin = sw / 30  // ~3 %
+        val topApprox  = (margin until sh / 2).firstOrNull { rowSmooth[it] >= rowThresh } ?: return null
+        val botApprox  = (sh - 1 - margin downTo sh / 2).firstOrNull { rowSmooth[it] >= rowThresh } ?: return null
+        val leftApprox = (margin until sw / 2).firstOrNull { colSmooth[it] >= colThresh } ?: return null
+        val rightApprox= (sw - 1 - margin downTo sw / 2).firstOrNull { colSmooth[it] >= colThresh } ?: return null
+
+        // ── Collect edge pixels in bands and fit lines ────────────────────────
+        val bandY = (sh * 0.05f).toInt().coerceAtLeast(4)
+        val bandX = (sw * 0.05f).toInt().coerceAtLeast(4)
+
+        val topPts   = hBandPoints(gy, mags, edgeThresh, sw, sh, topApprox,   bandY, positive = true)
+        val botPts   = hBandPoints(gy, mags, edgeThresh, sw, sh, botApprox,   bandY, positive = false)
+        val leftPts  = vBandPoints(gx, mags, edgeThresh, sw, sh, leftApprox,  bandX, positive = true)
+        val rightPts = vBandPoints(gx, mags, edgeThresh, sw, sh, rightApprox, bandX, positive = false)
 
         if (topPts.size < 5 || botPts.size < 5 ||
             leftPts.size < 5 || rightPts.size < 5) return null
@@ -110,94 +127,20 @@ object PageDetector {
         )
     }
 
-    // ── Edge-row finder ──────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Scans rows from the outer edge inward.
-     * Returns the first row whose longest run of qualifying horizontal-gradient
-     * pixels spans at least [MIN_RUN_FRAC] × sw.
-     *
-     * Qualifying pixel: magnitude > thresh AND Gy sign matches page–background
-     * transition direction (positive → dark above / light below = page top;
-     * negative → light above / dark below = page bottom).
-     */
-    private fun findEdgeRow(
-        gy: IntArray, mags: IntArray, thresh: Int,
-        sw: Int, sh: Int, fromTop: Boolean, margin: Float
-    ): Int? {
-        val mx = (sw * margin).toInt()
-        val my = (sh * margin).toInt()
-        val xStart = mx; val xEnd = sw - mx
-        val minRun = ((xEnd - xStart) * MIN_RUN_FRAC).toInt()
-        val yRange = if (fromTop) my until sh / 2 else (sh - my - 1) downTo sh / 2
-
-        for (y in yRange) {
-            if (longestRun(y, xStart, xEnd, sw, mags, gy, thresh,
-                    checkDir = { g -> if (fromTop) g > 0 else g < 0 }) >= minRun)
-                return y
-        }
-        return null
-    }
-
-    /**
-     * Same idea but scans columns for vertical-gradient (left / right) edges.
-     * Qualifying pixel: Gx sign matches transition direction.
-     */
-    private fun findEdgeCol(
-        gx: IntArray, mags: IntArray, thresh: Int,
-        sw: Int, sh: Int, fromLeft: Boolean, margin: Float
-    ): Int? {
-        val mx = (sw * margin).toInt()
-        val my = (sh * margin).toInt()
-        val yStart = my; val yEnd = sh - my
-        val minRun = ((yEnd - yStart) * MIN_RUN_FRAC).toInt()
-        val xRange = if (fromLeft) mx until sw / 2 else (sw - mx - 1) downTo sw / 2
-
-        for (x in xRange) {
-            if (longestRunCol(x, yStart, yEnd, sw, mags, gx, thresh,
-                    checkDir = { g -> if (fromLeft) g > 0 else g < 0 }) >= minRun)
-                return x
-        }
-        return null
-    }
-
-    /** Longest run (with gap tolerance) of qualifying pixels along a row. */
-    private fun longestRun(
-        y: Int, xStart: Int, xEnd: Int, sw: Int,
-        mags: IntArray, gradient: IntArray, thresh: Int,
-        checkDir: (Int) -> Boolean
-    ): Int {
-        var run = 0; var gap = 0; var best = 0
-        for (x in xStart until xEnd) {
-            val i = y * sw + x
-            if (mags[i] > thresh && checkDir(gradient[i])) {
-                run++; gap = 0; best = maxOf(best, run)
-            } else {
-                if (++gap > MAX_GAP) run = 0
+    private fun smooth(arr: FloatArray, w: Int = 7): FloatArray {
+        val out = FloatArray(arr.size)
+        for (i in arr.indices) {
+            var s = 0f; var n = 0
+            for (d in -w..w) {
+                val j = i + d
+                if (j in arr.indices) { s += arr[j]; n++ }
             }
+            out[i] = s / n
         }
-        return best
+        return out
     }
-
-    /** Longest run along a column. */
-    private fun longestRunCol(
-        x: Int, yStart: Int, yEnd: Int, sw: Int,
-        mags: IntArray, gradient: IntArray, thresh: Int,
-        checkDir: (Int) -> Boolean
-    ): Int {
-        var run = 0; var gap = 0; var best = 0
-        for (y in yStart until yEnd) {
-            val i = y * sw + x
-            if (mags[i] > thresh && checkDir(gradient[i])) {
-                run++; gap = 0; best = maxOf(best, run)
-            } else {
-                if (++gap > MAX_GAP) run = 0
-            }
-        }
-        return best
-    }
-
-    // ── Band point collectors ────────────────────────────────────────────────
 
     private fun hBandPoints(
         gy: IntArray, mags: IntArray, thresh: Int,
@@ -229,22 +172,19 @@ object PageDetector {
         return pts
     }
 
-    // ── Outlier filtering (MAD) ──────────────────────────────────────────────
-
     private fun filterOutliers(pts: List<PointF>, byY: Boolean): List<PointF> {
         val vals = if (byY) pts.map { it.y } else pts.map { it.x }
         val sorted = vals.sorted()
         val median = sorted[sorted.size / 2]
         val mad = vals.map { abs(it - median) }.sorted()
             .let { it[it.size / 2] }.coerceAtLeast(1f)
-        val threshold = 3f * mad
-        return pts.filter { abs((if (byY) it.y else it.x) - median) <= threshold }
+        return pts.filter { abs((if (byY) it.y else it.x) - median) <= 3f * mad }
     }
 
     // ── Line fitting ─────────────────────────────────────────────────────────
 
-    private data class HLine(val a: Double, val b: Double)   // y = a·x + b
-    private data class VLine(val a: Double, val b: Double)   // x = a·y + b
+    private data class HLine(val a: Double, val b: Double)
+    private data class VLine(val a: Double, val b: Double)
 
     private fun fitH(pts: List<PointF>): HLine? {
         if (pts.size < 2) return null

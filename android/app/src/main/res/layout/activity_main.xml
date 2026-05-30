@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5"
+    android:background="@color/colorBackground"
     tools:context=".MainActivity">
 
     <androidx.recyclerview.widget.RecyclerView
@@ -12,7 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:paddingBottom="80dp"
+        android:paddingBottom="88dp"
         tools:listitem="@layout/item_book" />
 
     <TextView
@@ -26,15 +26,18 @@
         android:textSize="16sp"
         android:visibility="gone" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/addBookFab"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="24dp"
         android:layout_marginBottom="24dp"
         android:contentDescription="Add new book"
-        android:src="@android:drawable/ic_input_add"
-        app:backgroundTint="#2196F3"
-        app:tint="@android:color/white" />
+        android:text="Add"
+        android:textColor="@android:color/white"
+        app:backgroundTint="@color/colorFab"
+        app:icon="@android:drawable/ic_input_add"
+        app:iconTint="@android:color/white" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

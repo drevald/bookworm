@@ -78,6 +78,9 @@ public class PythonOCRService {
 
         @JsonProperty("raw_ocr")
         private String rawOcr;
+
+        @JsonProperty("ocr_field_sources")
+        private Map<String, String> ocrFieldSources;
     }
 
     @Data
@@ -95,6 +98,8 @@ public class PythonOCRService {
         private String barcodeValue;
         /** Raw OCR text from all images combined. */
         private String rawOcrText;
+        /** Per-field OCR source labels from Python (e.g. "Info Page OCR", "Title Page OCR"). */
+        private Map<String, String> ocrFieldSources;
     }
 
     /**
@@ -194,6 +199,7 @@ public class PythonOCRService {
 
         data.setBarcodeValue(metadata.getBarcodeValue());
         data.setRawOcrText(metadata.getRawOcr());
+        data.setOcrFieldSources(metadata.getOcrFieldSources());
 
         return data;
     }

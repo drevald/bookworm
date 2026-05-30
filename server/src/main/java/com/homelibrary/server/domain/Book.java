@@ -30,6 +30,8 @@ public class Book {
     /** Raw value decoded from barcode image (ISBN-13 digits). */
     private String barcodeValue;
     private Integer publicationYear;
+    /** ISO language code used for OCR and metadata lookup, e.g. "rus", "eng", "rus+eng". */
+    private String language;
 
     @Column(length = 100)
     private String udk;
@@ -53,6 +55,16 @@ public class Book {
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private Set<Author> authors = new HashSet<>();
+
+    @ManyToMany
+    @JoinTable(
+        name = "book_group_members",
+        joinColumns = @JoinColumn(name = "book_id"),
+        inverseJoinColumns = @JoinColumn(name = "group_id")
+    )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Set<BookGroup> groups = new HashSet<>();
 
     @OneToMany(mappedBy = "book", cascade = CascadeType.ALL, orphanRemoval = true)
     @ToString.Exclude

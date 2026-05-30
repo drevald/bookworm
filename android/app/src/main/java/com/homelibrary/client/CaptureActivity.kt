@@ -5,10 +5,13 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.homelibrary.client.databinding.ActivityCaptureBinding
@@ -42,13 +45,16 @@ class CaptureActivity : AppCompatActivity() {
     }
 
     private fun updateInstruction() {
-        val text = when (pageType) {
-            "COVER" -> "Take photo of COVER"
-            "INFO_PAGE" -> "Take photo of INFO PAGE"
-            "BARCODE" -> "Take photo of BARCODE"
-            else -> "Take photo of PAGE"
+        binding.instructionText.text = when (pageType) {
+            "COVER"      -> "Cover"
+            "TITLE_PAGE" -> "Title"
+            "INFO_PAGE"  -> "Info"
+            "BARCODE"    -> "Barcode"
+            else         -> "Page"
         }
-        binding.instructionText.text = text
+        binding.captureHint.visibility =
+            if (pageType == "INFO_PAGE") android.view.View.VISIBLE
+            else android.view.View.GONE
     }
 
     private fun startCamera() {
@@ -58,12 +64,25 @@ class CaptureActivity : AppCompatActivity() {
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
             val preview = Preview.Builder()
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .build()
                 .also {
                     it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
                 }
 
-            imageCapture = ImageCapture.Builder().build()
+            // INFO_PAGE and TITLE_PAGE use max resolution for OCR quality.
+            // setTargetAspectRatio and setResolutionSelector are mutually exclusive.
+            val captureBuilder = ImageCapture.Builder()
+            if (pageType == "INFO_PAGE" || pageType == "TITLE_PAGE") {
+                captureBuilder.setResolutionSelector(
+                    ResolutionSelector.Builder()
+                        .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                        .build()
+                )
+            } else {
+                captureBuilder.setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            }
+            imageCapture = captureBuilder.build()
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 

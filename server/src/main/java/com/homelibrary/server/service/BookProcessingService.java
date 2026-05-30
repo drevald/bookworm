@@ -79,6 +79,9 @@ public class BookProcessingService {
             Book book = bookRepository.findById(bookId)
                     .orElseThrow(() -> new RuntimeException("Book not found: " + bookId));
 
+            // Persist the language used for this processing run
+            if (language != null && !language.isBlank()) book.setLanguage(language);
+
             // ── 1. Collect images by type ──────────────────────────────────────────
             byte[] coverImage = null;
             byte[] backImage = null;
@@ -134,19 +137,34 @@ public class BookProcessingService {
             String barcodeValue = ocrData.getBarcodeValue();
             if (barcodeValue != null && !barcodeValue.isBlank()) {
                 book.setBarcodeValue(barcodeValue);
-                log.info("Barcode ISBN for book {}: {}", bookId, barcodeValue);
+                log.info("Barcode value for book {}: {}", bookId, barcodeValue);
             }
+
+            // Only treat the barcode as an ISBN if it is a proper ISBN-13 (starts with 978 or 979).
+            // UPC-A codes (e.g. starting with 007) look like 13-digit numbers but are not ISBNs.
+            boolean barcodeIsIsbn = barcodeValue != null && !barcodeValue.isBlank()
+                    && (barcodeValue.startsWith("978") || barcodeValue.startsWith("979"));
 
             // ── 4. ISBN provider lookup (primary source) ───────────────────────────
-            String isbnForLookup = (barcodeValue != null && !barcodeValue.isBlank())
-                    ? barcodeValue
-                    : ocrData.getIsbn();
-            if (isbnForLookup != null && !isbnForLookup.isBlank() && !isbnForLookup.equals(barcodeValue)) {
-                log.info("No barcode for book {}, using OCR-extracted ISBN for lookup: {}", bookId, isbnForLookup);
+            // Priority: valid ISBN barcode → OCR-extracted → existing book ISBN (may be manually set)
+            String existingIsbn = book.getIsbn();
+            String isbnForLookup;
+            String isbnSource;
+            if (barcodeIsIsbn) {
+                isbnForLookup = barcodeValue;
+                isbnSource = "Barcode";
+            } else if (isValidIsbn(ocrData.getIsbn())) {
+                isbnForLookup = ocrData.getIsbn();
+                isbnSource = "OCR";
+                log.info("No ISBN barcode for book {}, using OCR-extracted ISBN: {}", bookId, isbnForLookup);
+            } else if (isValidIsbn(existingIsbn)) {
+                isbnForLookup = existingIsbn;
+                isbnSource = "Manual";
+                log.info("No OCR/barcode ISBN for book {}, using existing ISBN: {}", bookId, isbnForLookup);
+            } else {
+                isbnForLookup = ocrData.getIsbn();
+                isbnSource = "OCR";
             }
-
-            // "Barcode" if barcode was detected, otherwise "OCR" (ISBN came from page text)
-            String isbnSource = (barcodeValue != null && !barcodeValue.isBlank()) ? "Barcode" : "OCR";
 
             Optional<ProviderLookupResult> providerResult = Optional.empty();
             boolean forceOcr      = "ocr".equalsIgnoreCase(source);
@@ -327,9 +345,11 @@ public class BookProcessingService {
         if (setIfMeaningful(book::setBbk, provider.getBbk())) sources.put("bbk", providerName);
         else if (setIfMeaningful(book::setBbk, ocr.getBbk())) sources.put("bbk", "OCR");
 
-        // Annotation: prefer provider description if it has Cyrillic (for Russian books), fall back to OCR
+        // Annotation: prefer provider description; for Russian books require Cyrillic.
+        // Fall back to OCR annotation only for Russian books (English OCR annotation is typically garbled).
         String providerDesc = (requireCyrillic && !hasCyrillicText(provider.getDescription())) ? null : provider.getDescription();
-        String annotation = providerDesc != null ? providerDesc : ocr.getAnnotation();
+        String ocrAnnotation = requireCyrillic ? ocr.getAnnotation() : null;
+        String annotation = providerDesc != null ? providerDesc : ocrAnnotation;
         if (setIfMeaningful(book::setAnnotation, annotation)) {
             sources.put("annotation", providerDesc != null ? providerName : "OCR");
         }
@@ -376,18 +396,18 @@ public class BookProcessingService {
 
     private Map<String, String> applyOcrData(Book book, PythonOCRService.ParsedBookData ocr, String isbnSource) {
         Map<String, String> sources = new LinkedHashMap<>();
+        Map<String, String> pyS = ocr.getOcrFieldSources() != null ? ocr.getOcrFieldSources() : Map.of();
 
-        if (setIfPresent(book::setTitle, ocr.getTitle())) sources.put("title", "OCR");
-        if (setIfPresent(book::setIsbn, ocr.getIsbn())) sources.put("isbn", isbnSource);
+        if (setIfPresent(book::setTitle, ocr.getTitle()))       sources.put("title",     pyS.getOrDefault("title",     "OCR"));
+        if (setIfPresent(book::setIsbn, ocr.getIsbn()))         sources.put("isbn",      isbnSource);
         if (ocr.getPublicationYear() != null) {
-            book.setPublicationYear(ocr.getPublicationYear());
-            sources.put("year", "OCR");
+            book.setPublicationYear(ocr.getPublicationYear());  sources.put("year",      pyS.getOrDefault("year",      "OCR"));
         }
-        if (setIfMeaningful(book::setUdk, ocr.getUdk())) sources.put("udk", "OCR");
-        if (setIfMeaningful(book::setBbk, ocr.getBbk())) sources.put("bbk", "OCR");
-        if (setIfMeaningful(book::setAnnotation, ocr.getAnnotation())) sources.put("annotation", "OCR");
-        if (applyPublisher(book, ocr.getPublisher())) sources.put("publisher", "OCR");
-        if (applyAuthors(book, new ArrayList<>(ocr.getAuthors()))) sources.put("authors", "OCR");
+        if (setIfMeaningful(book::setUdk, ocr.getUdk()))        sources.put("udk",       pyS.getOrDefault("udk",       "OCR"));
+        if (setIfMeaningful(book::setBbk, ocr.getBbk()))        sources.put("bbk",       pyS.getOrDefault("bbk",       "OCR"));
+        if (setIfMeaningful(book::setAnnotation, ocr.getAnnotation())) sources.put("annotation", pyS.getOrDefault("annotation", "OCR"));
+        if (applyPublisher(book, ocr.getPublisher()))           sources.put("publisher", pyS.getOrDefault("publisher", "OCR"));
+        if (applyAuthors(book, new ArrayList<>(ocr.getAuthors()))) sources.put("authors", pyS.getOrDefault("authors",  pyS.getOrDefault("author", "OCR")));
 
         return sources;
     }

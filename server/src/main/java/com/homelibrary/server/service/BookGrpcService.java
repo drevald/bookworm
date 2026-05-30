@@ -24,10 +24,10 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
             log.info("[IMAGE_UPLOAD] Received upload request with {} images", request.getImagesCount());
 
             // 1. Save Book and Images immediately (Synchronous)
-            Book savedBook = saveBookInitial(request);
+            String language = request.hasMetadata() ? request.getMetadata().getLanguage() : null;
+            Book savedBook = saveBookInitial(request, language);
 
             // 2. Trigger Async Processing (OCR & Parsing)
-            String language = request.hasMetadata() ? request.getMetadata().getLanguage() : null;
             bookProcessingService.processBookAsync(savedBook.getId(), language, "auto");
 
             // 3. Return immediate response
@@ -52,8 +52,9 @@ public class BookGrpcService extends BookServiceGrpc.BookServiceImplBase {
     }
 
     @Transactional
-    protected Book saveBookInitial(UploadBookRequest request) {
+    protected Book saveBookInitial(UploadBookRequest request, String language) {
         Book book = new Book();
+        if (language != null && !language.isBlank()) book.setLanguage(language);
 
         for (int i = 0; i < request.getImagesCount(); i++) {
             PageImage pageImage = request.getImages(i);

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.graphics.PointF
 import android.os.Bundle
 import android.widget.Toast
@@ -34,11 +35,14 @@ class CropActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_IMAGE_PATH = "crop_image_path"
         const val EXTRA_PAGE_ID    = "crop_page_id"
+        const val EXTRA_PAGE_TYPE  = "crop_page_type"
     }
 
     private lateinit var binding: ActivityCropBinding
     private var imagePath: String? = null
-    private var sourceBitmap: Bitmap? = null
+    private var sourceBitmap: Bitmap? = null  // display-size, possibly rotated
+    private var totalRotation: Int = 0        // accumulated CW rotation in degrees
+    private var pageType: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +50,7 @@ class CropActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         imagePath = intent.getStringExtra(EXTRA_IMAGE_PATH)
+        pageType  = intent.getStringExtra(EXTRA_PAGE_TYPE)
         if (imagePath == null) { finish(); return }
 
         sourceBitmap = loadBitmap(imagePath!!)
@@ -55,6 +60,7 @@ class CropActivity : AppCompatActivity() {
             return
         }
 
+        binding.cropView.rectMode = (pageType != "COVER")
         binding.cropView.setBitmap(sourceBitmap!!)
         binding.hintText.text = "Detecting page…"
 
@@ -67,6 +73,27 @@ class CropActivity : AppCompatActivity() {
             setResult(Activity.RESULT_CANCELED)
             finish()
         }
+        binding.rotateButton.setOnClickListener { rotateCW() }
+        binding.resetCornersButton.setOnClickListener { autoDetect() }
+
+        // Show page type label if provided
+        val pageTypeName = intent.getStringExtra(EXTRA_PAGE_TYPE)
+        if (!pageTypeName.isNullOrEmpty()) {
+            binding.pageTypeLabel.text = pageTypeName.lowercase().replace('_', ' ')
+        }
+    }
+
+    // ── Rotate ───────────────────────────────────────────────────────────────
+
+    private fun rotateCW() {
+        val bm = sourceBitmap ?: return
+        val matrix = Matrix().apply { postRotate(90f) }
+        val rotated = Bitmap.createBitmap(bm, 0, 0, bm.width, bm.height, matrix, true)
+        sourceBitmap = rotated
+        totalRotation = (totalRotation + 90) % 360
+        binding.cropView.rectMode = (pageType != "COVER")
+        binding.cropView.setBitmap(rotated)
+        autoDetect()
     }
 
     // ── Auto-detection ───────────────────────────────────────────────────────
@@ -97,11 +124,31 @@ class CropActivity : AppCompatActivity() {
 
         binding.confirmButton.isEnabled = false
         binding.cancelButton.isEnabled  = false
+        binding.rotateButton.isEnabled  = false
+        binding.resetCornersButton.isEnabled = false
         binding.hintText.text = "Processing…"
 
         lifecycleScope.launch(Dispatchers.Default) {
             try {
-                val result = perspectiveWarpAndBalance(bm, pts)
+                // Load full-resolution image for the warp — the display bitmap (bm)
+                // is downsampled to ≤2048px, which throws away the resolution we captured.
+                val fullBm = BitmapFactory.decodeFile(path)
+                    ?: throw IllegalStateException("Failed to load full-res image")
+
+                // Apply accumulated rotation to the full-res bitmap.
+                val fullRotated = if (totalRotation != 0) {
+                    val m = Matrix().apply { postRotate(totalRotation.toFloat()) }
+                    Bitmap.createBitmap(fullBm, 0, 0, fullBm.width, fullBm.height, m, true)
+                        .also { if (it !== fullBm) fullBm.recycle() }
+                } else fullBm
+
+                // Scale corners from display-bitmap space → full-res space.
+                val scaleX = fullRotated.width.toFloat() / bm.width.toFloat()
+                val scaleY = fullRotated.height.toFloat() / bm.height.toFloat()
+                val fullPts = Array(pts.size) { i -> PointF(pts[i].x * scaleX, pts[i].y * scaleY) }
+
+                val result = perspectiveWarpAndBalance(fullRotated, fullPts)
+                fullRotated.recycle()
 
                 FileOutputStream(File(path)).use { out ->
                     result.compress(Bitmap.CompressFormat.JPEG, 92, out)
@@ -117,7 +164,9 @@ class CropActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     binding.confirmButton.isEnabled = true
                     binding.cancelButton.isEnabled  = true
-                    binding.hintText.text = "Adjust corners if needed, then tap Crop & Fix"
+                    binding.rotateButton.isEnabled  = true
+                    binding.resetCornersButton.isEnabled = true
+                    binding.hintText.text = "Adjust corners if needed, then tap Save"
                     Toast.makeText(this@CropActivity, "Failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -127,8 +176,11 @@ class CropActivity : AppCompatActivity() {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private fun perspectiveWarpAndBalance(src: Bitmap, pts: Array<PointF>): Bitmap =
-        PageCropper.warpAndBalance(src, pts)
+        if (pageType == "COVER") PageCropper.warpAndBalance(src, pts)
+        else                     PageCropper.cropAndBalance(src, pts)
 
+    // Loads a downsampled bitmap for display and corner detection only.
+    // The actual warp is performed on the full-resolution file in applyAndSave().
     private fun loadBitmap(path: String): Bitmap? = try {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, opts)

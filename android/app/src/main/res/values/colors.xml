@@ -7,4 +7,21 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Figma design colors -->
+    <color name="colorBackground">#F5F5F5</color>
+    <color name="colorSurface">#FFFFFF</color>
+    <color name="colorFab">#4CAF50</color>
+
+    <!-- Scan button colors -->
+    <color name="colorCover">#4CAF50</color>
+    <color name="colorTitle">#EF5350</color>
+    <color name="colorInfo">#26C6DA</color>
+    <color name="colorPage">#FFC107</color>
+    <color name="colorBarcode">#EEEEEE</color>
+
+    <!-- Action colors -->
+    <color name="colorDelete">#D32F2F</color>
+    <color name="colorSend">#1565C0</color>
+    <color name="colorTopBar">#FFFFFF</color>
 </resources>

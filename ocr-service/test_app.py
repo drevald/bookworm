@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app import app
-from ocr import extract_isbn, ocr_image, image_from_base64
+from ocr import extract_isbn, ocr_image, image_from_base64, extract_metadata_from_info_page
 
 client = TestClient(app)
 
@@ -367,6 +367,64 @@ def test_dual_ocr_isbn_from_images():
             print(f"[SUCCESS] Russian OCR failed to find ISBN - dual OCR approach is necessary!")
         else:
             print(f"[INFO] Russian OCR also found ISBN (unexpected but ok)")
+
+
+def test_mattison_snakes_info_page():
+    """
+    Regression test for ГОСТ 7.1-84 era book with:
+      - авторский знак followed by em-dash: "М 34 — Змеи / ..."
+      - publisher+year split across two OCR lines
+      - two consecutive ISBN lines before the annotation paragraph
+
+    Raw OCR text is the exact output Tesseract produced for the info page
+    of "Змеи" by Крис Маттисон (ООО «Издательство Астрель», 2001).
+    """
+    ocr_text = (
+        "В. 60, ЗАн»М 341Антор: Ирие МапилисонН\n"
+        "астоящее издание иредотавляет собой авторизованный\n"
+        "перевод ориринаяьного анилийскоро издания «Эпакев»,\n"
+        "опубликованного и 1999 г, издательством\n"
+        "Накрег Сов Рыб ИврегаМаттисон Крис\n"
+        "М 34 — Змеи / К, Маттисон; Пер, сангл. Т, Ю. Чугуно-\n"
+        "ва, —— М.: ООО «Издательство Астрель»: ООО «Из-\n"
+        "дательство АСТ», 2001.— 2656 с.: ил.\n"
+        "15ВМ 5-17-005384-8 (000 «Издательство АСТ»)\n"
+        "1ЗВМ 6-271-01746-Х (000 «Издательство Астрель»)\n"
+        "В мини-энциклопедии «Вмеи» представлены иллю-\n"
+        "страции и описания около 220 видов этих представите-\n"
+        "лей класса реытилий. Выбранные виды отражают все\n"
+        "многообразие размеров, форм и окраски, существую-\n"
+        "щие среди амей,\n"
+        "УДК 087.5:59(031)\n"
+        "ББК 28.693.34я21\n"
+    )
+
+    result = extract_metadata_from_info_page(ocr_text)
+
+    print("\nExtracted:")
+    for k, v in result.items():
+        print(f"  {k}: {v!r}")
+
+    assert normalize_for_comparison(result["title"]) == normalize_for_comparison("Змеи"), \
+        f"Title: expected 'Змеи', got {result['title']!r}"
+
+    assert result["year"] == 2001, \
+        f"Year: expected 2001, got {result['year']}"
+
+    assert normalize_isbn(result["isbn"]) in ("5170053848", "6271017469"), \
+        f"ISBN: expected one of the two ISBNs, got {result['isbn']!r}"
+
+    assert normalize_classification(result["udk"]) == normalize_classification("087.5:59(031)"), \
+        f"UDK: expected '087.5:59(031)', got {result['udk']!r}"
+
+    assert normalize_classification(result["bbk"]) == normalize_classification("28.693.34я21"), \
+        f"BBK: expected '28.693.34я21', got {result['bbk']!r}"
+
+    assert "астрел" in result["publisher"].lower() or "аст" in result["publisher"].lower(), \
+        f"Publisher should contain Астрель or АСТ, got {result['publisher']!r}"
+
+    assert result["annotation"] != "unknown" and "энциклопед" in result["annotation"].lower(), \
+        f"Annotation should contain encyclopedia text, got {result['annotation']!r}"
 
 
 if __name__ == "__main__":

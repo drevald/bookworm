@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.homelibrary.server.domain.Book;
 import com.homelibrary.server.domain.Image;
+import com.homelibrary.server.repository.BookGroupRepository;
 import com.homelibrary.server.repository.BookRepository;
 import com.homelibrary.server.service.BookProcessingService;
 import com.homelibrary.server.service.BookProcessingStatusService;
@@ -48,6 +49,9 @@ public class BookController {
     private com.homelibrary.server.service.PythonOCRService pythonOCRService;
 
     @Autowired
+    private BookGroupRepository bookGroupRepository;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     // Maximum dimension for web display (width or height) - 3x smaller
@@ -63,6 +67,7 @@ public class BookController {
             @RequestParam(required = false) String view,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) UUID groupId,
             Model model
     ) {
         Sort sort = sortDir.equalsIgnoreCase("asc")
@@ -70,7 +75,9 @@ public class BookController {
             : Sort.by(sortBy).descending();
 
         Pageable pageable = PageRequest.of(page, size, sort);
-        Page<Book> bookPage = bookRepository.findAll(pageable);
+        Page<Book> bookPage = groupId != null
+                ? bookRepository.findByGroupId(groupId, pageable)
+                : bookRepository.findAll(pageable);
 
         // Force initialization of images while in transaction (fixes LOB access error)
         bookPage.getContent().forEach(b -> b.getImages().size());
@@ -84,6 +91,9 @@ public class BookController {
         model.addAttribute("sortBy", sortBy);
         model.addAttribute("sortDir", sortDir);
         model.addAttribute("ocrServiceDown", !pythonOCRService.isHealthy());
+        model.addAttribute("allGroups", bookGroupRepository.findAll().stream()
+                .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName())).toList());
+        model.addAttribute("activeGroupId", groupId);
 
         return "books";
     }
@@ -99,6 +109,8 @@ public class BookController {
                 id, book.getTitle(), imageCount);
 
             model.addAttribute("book", book);
+            model.addAttribute("allGroups", bookGroupRepository.findAll().stream()
+                    .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName())).toList());
 
             // Prev / Next navigation (by createdAt; list is sorted DESC so
             // "previous in list" = newer = findNextBook, "next in list" = older = findPrevBook)
@@ -367,6 +379,7 @@ public class BookController {
         book.setUdk(null);
         book.setBbk(null);
         book.setAnnotation(null);
+        book.setLanguage(null);
         book.setMetadataSource(null);
         book.setFieldSourcesJson(null);
         book.getAuthors().clear();
@@ -433,7 +446,9 @@ public class BookController {
             @RequestParam(required = false) Integer year,
             @RequestParam String isbn,
             @RequestParam String udk,
-            @RequestParam String bbk) {
+            @RequestParam String bbk,
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false) String annotation) {
 
         Book book = bookRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Book not found"));
@@ -443,6 +458,8 @@ public class BookController {
         book.setIsbn(isbn.equals("unknown") || isbn.trim().isEmpty() ? null : isbn);
         book.setUdk(udk.equals("unknown") || udk.trim().isEmpty() ? null : udk);
         book.setBbk(bbk.equals("unknown") || bbk.trim().isEmpty() ? null : bbk);
+        book.setLanguage(language != null && !language.trim().isEmpty() ? language : null);
+        book.setAnnotation(annotation != null && !annotation.trim().isEmpty() ? annotation : null);
 
         if (publisher.equals("unknown") || publisher.trim().isEmpty()) {
             book.setPublisher(null);
@@ -466,10 +483,57 @@ public class BookController {
             }
         }
 
-        // Manual edit clears source tracking
-        book.setMetadataSource("Manual");
-        book.setFieldSourcesJson(null);
+        // Per-field manual source tracking: only mark fields that actually changed.
+        // Fields that were not edited keep their existing source (OCR / provider / etc.).
+        try {
+            java.util.Map<String, String> sources = new java.util.HashMap<>();
+            if (book.getFieldSourcesJson() != null) {
+                sources = objectMapper.readValue(book.getFieldSourcesJson(),
+                        new TypeReference<java.util.Map<String, String>>() {});
+            }
+            // Helper: old string value for comparison
+            String oldTitle     = book.getTitle();
+            String oldIsbn      = book.getIsbn();
+            String oldUdk       = book.getUdk();
+            String oldBbk       = book.getBbk();
+            String oldAnnotation= book.getAnnotation();
+            Integer oldYear     = book.getPublicationYear();
+            String oldPublisher = book.getPublisher() != null ? book.getPublisher().getName() : null;
+            String oldAuthors   = book.getAuthors().isEmpty() ? null :
+                    book.getAuthors().stream().map(a -> a.getName())
+                            .collect(java.util.stream.Collectors.joining(", "));
 
+            // Apply field values (already done above for most fields, but we need
+            // the comparisons before mutation — read values before the block above)
+            // Title
+            if (!java.util.Objects.equals(title, oldTitle)) sources.put("title", "Manual");
+            // ISBN
+            String cleanIsbn = isbn.equals("unknown") || isbn.trim().isEmpty() ? null : isbn;
+            if (!java.util.Objects.equals(cleanIsbn, oldIsbn)) sources.put("isbn", "Manual");
+            // Year
+            if (!java.util.Objects.equals(year, oldYear)) sources.put("year", "Manual");
+            // UDK
+            String cleanUdk = udk.equals("unknown") || udk.trim().isEmpty() ? null : udk;
+            if (!java.util.Objects.equals(cleanUdk, oldUdk)) sources.put("udk", "Manual");
+            // BBK
+            String cleanBbk = bbk.equals("unknown") || bbk.trim().isEmpty() ? null : bbk;
+            if (!java.util.Objects.equals(cleanBbk, oldBbk)) sources.put("bbk", "Manual");
+            // Annotation
+            String cleanAnnotation = annotation != null && !annotation.trim().isEmpty() ? annotation : null;
+            if (!java.util.Objects.equals(cleanAnnotation, oldAnnotation)) sources.put("annotation", "Manual");
+            // Publisher
+            String cleanPublisher = publisher.equals("unknown") || publisher.trim().isEmpty() ? null : publisher;
+            if (!java.util.Objects.equals(cleanPublisher, oldPublisher)) sources.put("publisher", "Manual");
+            // Authors
+            if (!java.util.Objects.equals(author.trim().isEmpty() ? null : author, oldAuthors)) sources.put("authors", "Manual");
+
+            book.setFieldSourcesJson(objectMapper.writeValueAsString(sources));
+        } catch (Exception e) {
+            log.warn("Failed to update fieldSources on manual edit: {}", e.getMessage());
+            book.setFieldSourcesJson(null);
+        }
+
+        book.setMetadataSource("Manual");
         bookRepository.save(book);
         log.info("Updated book {}", id);
 

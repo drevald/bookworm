@@ -65,17 +65,18 @@ class OCRRequest(BaseModel):
 
 
 class BookMetadata(BaseModel):
-    title:          str
-    author:         str
-    authors:        Optional[List[str]] = None
-    publisher:      str
-    year:           int
-    isbn:           str
-    udk:            str
-    bbk:            str
-    annotation:     str
-    raw_ocr:        Optional[str] = None
-    barcode_value:  Optional[str] = None
+    title:              str
+    author:             str
+    authors:            Optional[List[str]] = None
+    publisher:          str
+    year:               int
+    isbn:               str
+    udk:                str
+    bbk:                str
+    annotation:         str
+    raw_ocr:            Optional[str] = None
+    barcode_value:      Optional[str] = None
+    ocr_field_sources:  Optional[dict] = None
 
 # ========================================
 # ENDPOINT
@@ -112,11 +113,15 @@ async def extract_metadata(req: OCRRequest):
 
         # Title pages (old books with no GOST info page)
         title_page_data = {}
+        ocr_title = ""
         for i, b64 in enumerate(req.title_images or [], 1):
             img = image_from_base64(b64)
             result = extract_metadata_from_title_page(img)
             logger.info("Title page %d extracted: %s", i,
-                        {k: v for k, v in result.items() if k != "annotation"})
+                        {k: v for k, v in result.items() if k not in ("annotation", "_raw_ocr")})
+            raw = result.pop("_raw_ocr", "")
+            if raw:
+                ocr_title += f"=== TITLE PAGE {i} ===\n{raw}\n"
             # Merge: first title page with a non-unknown value wins per field
             for field, val in result.items():
                 if field not in title_page_data and val not in ("unknown", 0, None):
@@ -129,51 +134,61 @@ async def extract_metadata(req: OCRRequest):
             ocr_eng  += "=== BACK COVER ===\n" + ocr_image(back_img, "eng") + "\n"
 
         # Barcode
-        barcode_isbn = None
+        barcode_raw = None   # raw decoded value (stored for display)
+        barcode_isbn = None  # valid ISBN only (used for lookup)
         if req.barcode_image:
             barcode_img = image_from_base64(req.barcode_image)
-            barcode_isbn = detect_barcode_isbn(barcode_img)
-            if barcode_isbn:
-                logger.info("Barcode detected ISBN: %s", barcode_isbn)
+            barcode_raw, barcode_isbn = detect_barcode_isbn(barcode_img)
+            if barcode_raw:
+                logger.info("Barcode raw value: %s  ISBN: %s", barcode_raw, barcode_isbn)
 
-        if not ocr_cover.strip() and not ocr_info.strip() and not title_page_data and not barcode_isbn:
+        if not ocr_cover.strip() and not ocr_info.strip() and not title_page_data and not barcode_raw:
             raise HTTPException(400, "No OCR text extracted from provided images")
 
         # Extract
         cover_data = extract_title_author_from_cover(ocr_cover) if ocr_cover.strip() else {}
         info_data  = extract_metadata_from_info_page(ocr_info, ocr_eng, req.gost_parser) if ocr_info.strip() else {}
 
-        def _val(field, default):
-            """Pick best value: info page → title page → cover → default."""
-            v = info_data.get(field, default)
-            if v in ("unknown", 0, None):
-                v = title_page_data.get(field, default)
-            return v
+        _EMPTY = ("unknown", 0, None, "")
 
-        # Merge — info page wins; title page fills gaps; cover is last fallback for title/author
-        data = {
-            "title":      _val("title",     cover_data.get("title",  "unknown")),
-            "author":     _val("author",    cover_data.get("author", "unknown")),
-            "publisher":  _val("publisher", "unknown"),
-            "year":       _val("year",      0),
-            "isbn":       _val("isbn",      "unknown"),
-            "udk":        _val("udk",       "unknown"),
-            "bbk":        _val("bbk",       "unknown"),
-            "annotation": _val("annotation","unknown"),
-        }
+        def _val(field, default="unknown"):
+            """Pick best value: info page → title page → cover → default.
+            Returns (value, source_label)."""
+            v = info_data.get(field)
+            if v not in _EMPTY:
+                return v, "Info Page OCR"
+            v = title_page_data.get(field)
+            if v not in _EMPTY:
+                return v, "Title Page OCR"
+            v = cover_data.get(field)
+            if v not in _EMPTY:
+                return v, "Cover OCR"
+            return default, None
 
-        # Barcode ISBN overrides OCR-parsed ISBN (more reliable)
+        # Merge — info page wins; title page fills gaps; cover is last fallback
+        fields = ("title", "author", "publisher", "isbn", "udk", "bbk", "annotation")
+        ocr_field_sources = {}
+        data = {"year": 0}
+        for f in fields:
+            data[f], src = _val(f)
+            if src:
+                ocr_field_sources[f] = src
+        year_val, year_src = _val("year", 0)
+        data["year"] = year_val
+        if year_src:
+            ocr_field_sources["year"] = year_src
+
+        # Barcode ISBN overrides OCR-parsed ISBN (more reliable), but only if it's a real ISBN
         if barcode_isbn:
             data["isbn"] = barcode_isbn
+            ocr_field_sources["isbn"] = "Barcode"
 
-        if data["title"]  == "unknown" and cover_data.get("title")  not in (None, "unknown"):
-            data["title"]  = cover_data["title"]
-        if data["author"] == "unknown" and cover_data.get("author") not in (None, "unknown"):
-            data["author"] = cover_data["author"]
-
-        data["raw_ocr"] = f"=== COVER ===\n{ocr_cover}\n\n{ocr_info}"
+        data["raw_ocr"] = f"=== COVER ===\n{ocr_cover}\n\n{ocr_title}{ocr_info}"
         data["authors"] = [data["author"]] if data["author"] != "unknown" else []
-        data["barcode_value"] = barcode_isbn
+        if data["author"] != "unknown" and "author" in ocr_field_sources:
+            ocr_field_sources["authors"] = ocr_field_sources["author"]
+        data["barcode_value"] = barcode_raw  # always store raw barcode for display
+        data["ocr_field_sources"] = ocr_field_sources
 
         logger.info("Extracted metadata: %s", json.dumps(
             {k: v for k, v in data.items() if k != "raw_ocr"},

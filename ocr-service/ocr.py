@@ -43,22 +43,40 @@ def ocr_info_page(image: Image.Image) -> str:
     """
     Two-pass Russian OCR optimised for book copyright/info pages.
 
-    Pass 1 — full-page OCR (no preprocessing — dewarping distorts pages).
+    Preprocessing:
+      • White-point normalisation — maps 99th-percentile brightness → 255,
+        turning yellowed/shadowed paper backgrounds pure white (same effect as
+        Photoshop Levels with the white-point slider pulled to the background value).
+      • Grayscale conversion — removes colour noise; Tesseract binarises better
+        on a single-channel image.
+
+    Pass 1 — full-page OCR on the preprocessed image.
               Captures the main body: citation, annotation, editorial block.
 
-    Pass 2 — raw top-left crop (~50% × 20%), PSM 6, NO preprocessing.
-              Preprocessing degrades the small catalog-block text.
-              Prepended to the main text so the structured parser finds
-              УДК / ББК at the very start.
+    Pass 2 — same preprocessed crop (~50% × 20% top-left), PSM 6.
+              Prepended so the structured parser finds УДК / ББК at the start.
 
     English OCR (for ISBN detection) is handled by the caller and passed
     separately to extract_metadata_from_info_page as ocr_eng.
     """
-    main_text = ocr_image(image, 'rus')
+    # Preprocess: normalise white point then convert to grayscale.
+    preprocessed = _whitepoint_normalize(image).convert('L')
 
-    # Pass 2: raw catalog block crop (top-left corner)
-    w, h = image.size
-    catalog_crop = image.crop((0, 0, int(w * 0.50), int(h * 0.20)))
+    main_text = pytesseract.image_to_string(preprocessed, lang='rus')
+
+    # Close-up fallback: if PSM 3 returned very little (e.g. a 3-line catalog
+    # block close-up has no full-page layout), retry with PSM 11 (sparse text).
+    if len(main_text.strip()) < 20:
+        main_text = pytesseract.image_to_string(
+            preprocessed, lang='rus', config='--psm 11'
+        )
+
+    # Pass 2: catalog block crop (top-left corner).
+    if re.search(r'(?m)^УДК|^ББК', main_text):
+        return main_text
+
+    w, h = preprocessed.size
+    catalog_crop = preprocessed.crop((0, 0, int(w * 0.50), int(h * 0.20)))
     catalog_text = pytesseract.image_to_string(
         catalog_crop, lang='rus', config='--psm 6'
     )
@@ -128,37 +146,174 @@ def _binarize(image: Image.Image) -> Image.Image:
     return Image.fromarray(binary)
 
 
+def _word_score(text: str) -> int:
+    """
+    Squared-word-length score: rewards multi-character words, not raw char count.
+
+    разрядка OCR without fix returns single-char tokens: "М О С К В А".
+    _alpha_score counts 6 either way.  This scorer gives 6**2 = 36 for "МОСКВА"
+    vs 6 * 1**2 = 6 for six separate letters — strongly preferring merged words.
+    """
+    return sum(len(w) ** 2 for w in text.split() if w.isalpha())
+
+
+def _merge_razryadka(text: str) -> str:
+    """
+    Text-level fix for разрядка (wide inter-letter tracking) OCR artefacts.
+
+    When Tesseract reads разрядка text without compression it tokenises each
+    letter separately: "М О С К В А" instead of "МОСКВА".  This function detects
+    runs of single Cyrillic (or Latin) character tokens and merges them back into
+    words.  A run must contain at least 2 consecutive single-char tokens.
+
+    Applied after PSM 7 OCR at native resolution — no geometry distortion needed.
+    """
+    RUS = set('АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя')
+    result = []
+    for line in text.splitlines():
+        tokens = line.split()
+        merged = []
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            # Single Cyrillic or Latin char — check if this starts a run
+            if len(tok) == 1 and (tok in RUS or tok.isalpha()):
+                run = [tok]
+                j = i + 1
+                while j < len(tokens) and len(tokens[j]) == 1 and (tokens[j] in RUS or tokens[j].isalpha()):
+                    run.append(tokens[j])
+                    j += 1
+                if len(run) >= 2:
+                    merged.append(''.join(run))
+                    i = j
+                else:
+                    merged.append(tok)
+                    i += 1
+            else:
+                merged.append(tok)
+                i += 1
+        result.append(' '.join(merged))
+    return '\n'.join(result)
+
+
+def _ocr_line_no_distortion(line_img: Image.Image, lang: str = 'rus') -> str:
+    """
+    OCR a single text line at native resolution with text-level разрядка fix.
+
+    PSM 7 = single text line.  No horizontal compression — distortion degrades
+    glyph geometry and causes character substitutions.  Instead, разрядка artefacts
+    are corrected after OCR by merging single-char token runs (_merge_razryadka).
+    """
+    t = pytesseract.image_to_string(line_img, lang=lang, config='--psm 7').strip()
+    return _merge_razryadka(t)
+
+
+def _split_text_lines(binary_img) -> list:
+    """
+    Split a binarized numpy array into horizontal text-line strips.
+    Returns list of (y_start, y_end) row ranges where ink is present.
+    Merges rows within 8px vertical gap (handles descenders / multi-row lines).
+    """
+    import numpy as np
+    # Row has ink if any pixel is dark (value < 128 for binary image)
+    row_has_ink = binary_img.min(axis=1) < 128
+    lines = []
+    in_line = False
+    start = 0
+    GAP = 8
+    last_ink = -GAP - 1
+    for y, has in enumerate(row_has_ink):
+        if has:
+            if not in_line:
+                start = y
+                in_line = True
+            last_ink = y
+        elif in_line and (y - last_ink) > GAP:
+            lines.append((start, last_ink + 1))
+            in_line = False
+    if in_line:
+        lines.append((start, len(row_has_ink)))
+    return lines
+
+
 def ocr_colored_text_page(image: Image.Image) -> str:
     """
-    OCR for title pages where text is printed in colour (e.g. blue) on a
-    light background — a common style in old Soviet books.
+    OCR for title pages where text may be coloured and/or use wide letter-spacing
+    (разрядка) — common in Soviet-era books.
 
-    Passes tried in order; the first that returns >= 20 characters is used:
-      1. R − B channel difference → binarized.  Best for blue/red text.
-      2. Greyscale → binarized (Otsu).  Best for black text on aged paper.
-      3. Raw greyscale.  Fallback for low-contrast images.
+    Pipeline (no image distortion):
+      1. Whitepoint-normalise (yellowed paper correction).
+      2. Build two binarized candidates:
+           a) R–B channel diff  — isolates coloured (red/blue) text on white.
+              Used only when the image actually has significant colour variance.
+           b) Greyscale + Otsu  — reliable for black ink on any background.
+      3. For each candidate: split into text-line strips (_split_text_lines),
+         OCR each strip at native resolution with PSM 7 (_ocr_line_no_distortion),
+         then merge consecutive single-char Cyrillic tokens (_merge_razryadka).
+      4. Pick the candidate with the highest squared-word-length score (_word_score).
+         This metric strongly prefers merged words over разрядка letter soup.
+      5. Fallback: full-page PSM 6 on greyscale binarized image.
     """
     import numpy as np
 
-    # Correct yellowed / aged paper before OCR: scale so 99th-percentile = white.
-    # This makes the background brighter and text darker, improving all passes.
     image = _whitepoint_normalize(image)
-
     arr = np.array(image.convert('RGB'))
 
-    # Pass 1: colour channel subtraction (R − B) then binarize
-    diff = np.clip(arr[:, :, 0].astype(int) - arr[:, :, 2].astype(int), 0, 255).astype('uint8')
-    text1 = pytesseract.image_to_string(_binarize(Image.fromarray(diff)), lang='rus')
-    if len(text1.strip()) >= 20:
-        return text1
+    # Decide whether the image has significant colour (non-grey) content.
+    # Compare R and B channels: if their mean absolute difference > 10 intensity
+    # levels, there is coloured ink worth extracting via diff.
+    r_ch = arr[:, :, 0].astype(int)
+    b_ch = arr[:, :, 2].astype(int)
+    has_color = float(np.mean(np.abs(r_ch - b_ch))) > 10.0
 
-    # Pass 2: greyscale + binarize
-    text2 = pytesseract.image_to_string(_binarize(image), lang='rus')
-    if len(text2.strip()) >= 20:
-        return text2
+    candidates = []
+    if has_color:
+        diff_arr = np.clip(r_ch - b_ch, 0, 255).astype('uint8')
+        candidates.append(_binarize(Image.fromarray(diff_arr)))  # coloured text channel
+    candidates.append(_binarize(image))                           # standard greyscale
 
-    # Pass 3: raw greyscale fallback
-    return pytesseract.image_to_string(image.convert('L'), lang='rus')
+    best_text = ""
+    best_score = -1
+
+    for bin_img in candidates:
+        bin_arr = np.array(bin_img.convert('L'))
+        line_ranges = _split_text_lines(bin_arr)
+
+        if not line_ranges:
+            continue
+
+        page_lines = []
+        for idx, (y0, y1) in enumerate(line_ranges):
+            # Insert blank line when the visual gap between sections is large.
+            # Use the SMALLER of the two adjacent line heights as reference so
+            # that a small author line (20px) followed by a large title line (60px)
+            # triggers a blank at a modest gap (> 20px), not only at 90px (1.5×60).
+            if idx > 0:
+                prev_y0, prev_y1 = line_ranges[idx - 1]
+                prev_h = prev_y1 - prev_y0
+                line_h = y1 - y0
+                ref_h  = min(prev_h, line_h)
+                gap    = y0 - prev_y1
+                if gap > ref_h * 1.2:
+                    page_lines.append('')
+
+            pad = max(2, (y1 - y0) // 4)
+            strip = bin_img.crop((0, max(0, y0 - pad), bin_img.width, min(bin_img.height, y1 + pad)))
+            line_text = _ocr_line_no_distortion(strip)
+            if line_text:
+                page_lines.append(line_text)
+
+        text = '\n'.join(page_lines)
+        s = _word_score(text)
+        if s > best_score:
+            best_score, best_text = s, text
+
+    if best_score >= 4:   # at least one 2-char word (2**2 = 4)
+        return best_text
+
+    # Fallback: full-page PSM 6 on greyscale binarized image
+    fallback = pytesseract.image_to_string(_binarize(image), lang='rus', config='--psm 6')
+    return _merge_razryadka(fallback)
 
 
 def _parse_title_page_hocr(image: Image.Image) -> dict:
@@ -404,31 +559,61 @@ def _parse_title_page(text: str) -> dict:
     year_re = re.compile(r'\b(1[5-9]\d{2}|20\d{2})\b')
 
     # First group → author
-    data['author'] = _normalize_author(' '.join(groups[0]))
-
     if len(groups) == 1:
-        # Only one group — treat everything after the first line as title
+        # Only one group — no blank-line separators found.
+        # Treat first line as author, remaining lines as title.
+        data['author'] = _normalize_author(groups[0][0])
         if len(groups[0]) > 1:
             data['title'] = _clean_title(' '.join(groups[0][1:]))
         return data
 
-    # Last group → publisher + year if it looks like a colophon
+    # Multiple groups: first group → author (may be multi-line, e.g. two co-authors)
+    data['author'] = _normalize_author(' '.join(groups[0]))
+
+    # Last group → year (always); publisher from last group only as fallback.
     last = groups[-1]
     last_text = ' '.join(last)
     ym = year_re.search(last_text)
     if ym:
         data['year'] = int(ym.group(1))
-        # Publisher: everything before the year on the same line, stripped of noise
-        pub = re.sub(r'\b(1[5-9]\d{2}|20\d{2})\b.*', '', last_text).strip(' .,—–')
-        if pub:
-            data['publisher'] = pub
         title_groups = groups[1:-1]
     else:
         title_groups = groups[1:]
 
-    if title_groups:
-        raw_title = ' '.join(line for g in title_groups for line in g)
-        # Remove standalone OCR noise tokens (_, |, single punctuation)
+    # Scan middle groups for publisher blocks BEFORE falling back to last group.
+    # A publisher block starts with a city name or contains a known publisher keyword.
+    # This lets "Стройиздат / Москва, К-12..." win over the colophon "Сдано набор 29, Х1".
+    _CITY_RE = re.compile(
+        r'^(?:Москва|Ленинград|Санкт-Петербург|СПб|Киев|Минск|Новосибирск|Харьков)',
+        re.IGNORECASE,
+    )
+    _PUB_KW_RE = re.compile(
+        r'(?:издательство|изд-во|издат\b|Стройиздат|Наука|Мир\b|Просвещение'
+        r'|Прогресс|Радио\b|Машиностроение|Энергия|Транспорт|Медицина|Юридическая'
+        r'|Политиздат|Воениздат|Гослитиздат|Гостехиздат|Детгиз|Детская литература)',
+        re.IGNORECASE,
+    )
+    actual_title_groups = []
+    for g in title_groups:
+        group_text = ' '.join(g)
+        first_line = g[0] if g else ''
+        if _CITY_RE.match(first_line) or _PUB_KW_RE.search(group_text):
+            # Publisher block found in middle — always prefer over last-group colophon text
+            pub = re.sub(r'\b(1[5-9]\d{2}|20\d{2})\b.*', '', group_text).strip(' .,—–»«')
+            pub = re.sub(r'(?<!\w)\S(?!\w)', '', pub).strip()
+            if pub and len(pub) > 2:
+                data['publisher'] = pub   # overwrites any previously set colophon text
+        else:
+            actual_title_groups.append(g)
+
+    # Fall back to last group for publisher only when no keyword match found above
+    if data.get('publisher', 'unknown') in ('unknown', '', None) and ym:
+        pub = re.sub(r'\b(1[5-9]\d{2}|20\d{2})\b.*', '', last_text).strip(' .,—–')
+        if pub:
+            data['publisher'] = pub
+
+    if actual_title_groups:
+        raw_title = ' '.join(line for g in actual_title_groups for line in g)
         raw_title = re.sub(r'\s+[_|]\s+', ' ', raw_title).strip()
         data['title'] = _clean_title(raw_title)
 
@@ -511,7 +696,7 @@ _BBK = re.compile(r"ББК\s*[:.]?\s*(.+)")
 #   separator: up to 5 non-digit non-newline chars (handles "$", ":", "№", etc.)
 #   digit group: $ included because Russian OCR commonly misreads 5 → $
 _ISBN = re.compile(
-    r"(?:ISBN|1[35$][ВBвb][МNмн№]|ISB[МNмн]|Г[35][ВBвb][МNмн]|[ТT][ОO][ВBвb][МNмн])[^\d$\n]{0,5}"
+    r"(?:ISBN|1[35$З][ВBвb][МNмн№]|ISB[МNмн]|Г[35][ВBвb][МNмн]|[ТT][ОO][ВBвb][МNмн])[^\d$\n]{0,5}"
     r"([$0-9XxХх\-\–\—\−\.\s]{10,25})",  # Х/х: Cyrillic X misread; $: 5 or S misread; _clean_isbn validates
     re.IGNORECASE,
 )
@@ -556,10 +741,6 @@ def _clean_isbn(raw: str) -> str:
         r"[^0-9X]", "",
         raw.replace("$", "5").replace("Х", "X").replace("х", "x").upper()
     )
-    # Strip 978 prefix — ISBN-13 and ISBN-10 refer to the same book;
-    # store the shorter ISBN-10 body for uniform comparison
-    if len(result) == 13 and result.startswith("978"):
-        result = result[3:]
     return result if result else "unknown"
 
 def _extract_isbn_from_text(text: str) -> str:
@@ -651,9 +832,11 @@ def _annotation_after_isbn(text: str) -> str:
             break
     if isbn_i is None:
         return "unknown"
-    # Skip blank lines between ISBN and annotation block
+    # Skip blank lines and additional consecutive ISBN lines between the first
+    # ISBN and the annotation block (books sometimes have two ISBN lines,
+    # one per publisher, before the actual annotation text).
     k = isbn_i + 1
-    while k < len(raw) and not raw[k]:
+    while k < len(raw) and (not raw[k] or _ISBN.search(raw[k])):
         k += 1
     ann = []
     for j in range(k, len(raw)):
@@ -775,6 +958,10 @@ def _parse_author_sign_block(lines: list, i: int) -> tuple:
             break
 
     rest = m.group(2).strip()
+    # Some formats: "М 34 — Название / Автор. — М.: Publisher, Year."
+    # Strip the leading em-dash so the citation text starts with the title,
+    # not with "—", which would break _CITATION_* regexes expecting title first.
+    rest = re.sub(r'^[—\-]\s*', '', rest)
     end = min(i + _CITATION_WINDOW, len(lines))
 
     if rest:
@@ -805,7 +992,7 @@ def _parse_author_sign_block(lines: list, i: int) -> tuple:
 _CITATION_2003 = re.compile(
     r"(?P<title>[^/—\n]{3,80}?)"
     r"(?:\s*/\s*[^—\n]+?)?"            # optional: / author (allow hyphens — translator credits)
-    r"\s*[—\-]\s*"
+    r"\s*[—\-]{1,2}\s*"
     r"(?P<place>[А-ЯЁ][а-яёА-ЯЁ.]{0,15}(?:;\s*[А-ЯЁ][а-яёА-ЯЁ\s.]{0,25})?)"
     r"\s*:\s*(?P<publisher>.+?),\s*(?P<year>\d{4})"
 )
@@ -873,11 +1060,14 @@ def _parse_gost_7_1_2003(text: str) -> dict:
             if not raw_title:
                 continue
 
-            # Scan subsequent lines for city:publisher,year
+            # Scan subsequent lines for city:publisher,year.
+            # Join with the next line to handle OCR line-breaks mid-citation
+            # (e.g. "М.: ООО «Изд. Астрель»: ООО «Из-" / "дательство АСТ», 2001").
             author, _, _ = _parse_author_sign_block(lines, i)
             limit = min(isbn_idx if isbn_idx else len(lines), i + 8)
             for j in range(i + 1, limit):
-                pm = _CITY_PUB_YEAR.search(lines[j])
+                joined = lines[j] + (" " + lines[j + 1] if j + 1 < limit else "")
+                pm = _CITY_PUB_YEAR.search(joined)
                 if not pm:
                     continue
                 if len(pm.group("place").rstrip(".")) > 3:
@@ -1383,7 +1573,18 @@ def _parse_structured(text: str) -> dict:
 
     if ann_anchor is not None:
         ann_start = ann_anchor + 1
-        while ann_start < len(stripped) and not stripped[ann_start]:
+        # When the anchor is a pages marker (not ISBN), it may land mid-citation
+        # (e.g. "528 с., ил.— (Сокровища" with the series closing paren on the
+        # next line).  Skip the rest of the current citation paragraph by
+        # advancing past the next blank line before collecting annotation.
+        if ann_anchor != isbn_idx:
+            while ann_start < len(stripped) and stripped[ann_start]:
+                ann_start += 1  # skip to blank line (end of citation paragraph)
+        # Skip blank lines AND consecutive ISBN lines (e.g. two ISBN lines,
+        # one per publisher) so the actual annotation paragraph is found.
+        while ann_start < len(stripped) and (
+            not stripped[ann_start] or _ISBN.search(stripped[ann_start])
+        ):
             ann_start += 1
         ann_lines = []
         for i in range(ann_start, len(stripped)):
@@ -1508,12 +1709,14 @@ def extract_metadata_from_title_page(image: Image.Image) -> dict:
     except Exception:
         pass
 
+    raw_title_ocr = ""
     text_data = _empty()
     try:
-        text = ocr_colored_text_page(image)
-        text_data = _parse_title_page(text)
-    except Exception:
-        pass
+        raw_title_ocr = ocr_colored_text_page(image)
+        logger.info("ocr_colored_text_page raw output: %r", raw_title_ocr[:300])
+        text_data = _parse_title_page(raw_title_ocr)
+    except Exception as e:
+        logger.warning("ocr_colored_text_page failed: %s", e)
 
     # Merge strategy:
     #  • year / publisher — HOCR is most reliable (footer text is usually black)
@@ -1526,6 +1729,15 @@ def extract_metadata_from_title_page(image: Image.Image) -> dict:
 
     hocr_has_author = hocr_data['author'] not in ('unknown', '')
 
+    # Publisher keyword regex: a string matching this is almost certainly a publisher name,
+    # not a colophon line ("Сдано в набор...", "Тираж...", etc.).
+    _PUB_KW = re.compile(
+        r'(?:издательство|изд-во|издат\b|Стройиздат|Наука|Мир\b|Просвещение'
+        r'|Прогресс|Радио\b|Машиностроение|Энергия|Транспорт|Медицина|Юридическая'
+        r'|Политиздат|Воениздат|Гослитиздат|Гостехиздат|Детгиз|Детская литература)',
+        re.IGNORECASE,
+    )
+
     for field in ('author', 'title', 'publisher', 'year'):
         hocr_val  = hocr_data[field]
         text_val  = text_data[field]
@@ -1535,8 +1747,15 @@ def extract_metadata_from_title_page(image: Image.Image) -> dict:
         if hocr_miss and text_hit:
             data[field] = text_val          # HOCR missed it → use coloured OCR
         elif field == 'title' and not hocr_has_author and text_hit:
-            data[field] = text_val          # HOCR title untrustworthy → use coloured OCR
+            data[field] = text_val          # HOCR found no author → title boundary ambiguous → use coloured OCR
+        elif field == 'publisher' and text_hit and _PUB_KW.search(str(text_val)):
+            # text_data found a recognised publisher keyword (e.g. "Стройиздат").
+            # HOCR often grabs the colophon line ("Сдано в набор 29, XI") as publisher
+            # because the real publisher name sits in the body, not the footer.
+            # Always prefer the keyword-matched value.
+            data[field] = text_val
 
+    data['_raw_ocr'] = raw_title_ocr
     return data
 
 
@@ -1545,10 +1764,21 @@ def extract_title_author_from_cover(ocr_text: str) -> dict:
     """
     Best-effort title/author from cover text.
     Without font-size info only basic heuristics are possible.
+
+    A "meaningful" line contains at least 40% Cyrillic/Latin letters.
+    Title candidates are ALL-CAPS meaningful lines; consecutive ones are joined.
+    Falls back to the longest meaningful line if no ALL-CAPS candidates found.
     """
     lines = _lines(ocr_text)
     if not lines:
         return {"title": "unknown", "author": "unknown"}
+
+    def _is_meaningful(line: str) -> bool:
+        """True if the line is mostly letters (≥40%), not noise."""
+        if len(line) < 3:
+            return False
+        letters = sum(1 for c in line if c.isalpha())
+        return letters / len(line) >= 0.4
 
     _COVER_AUTHOR = [
         re.compile(r"^[А-ЯЁ][а-яё]+,?\s+[А-ЯЁA-Z]\.\s?(?:[А-ЯЁA-Z]\.)?$"),
@@ -1566,8 +1796,26 @@ def extract_title_author_from_cover(ocr_text: str) -> dict:
         if author != "unknown":
             break
 
-    title_lines = [l for i, l in enumerate(lines) if i != author_idx and len(l) > 2]
-    title = title_lines[0] if title_lines else "unknown"
+    meaningful = [(i, l) for i, l in enumerate(lines)
+                  if i != author_idx and _is_meaningful(l)]
+
+    if not meaningful:
+        return {"title": "unknown", "author": author}
+
+    # Prefer ALL-CAPS lines (titles on Russian covers are often uppercased)
+    caps_lines = [(i, l) for i, l in meaningful if l == l.upper() and len(l) > 3]
+    if caps_lines:
+        # Join consecutive ALL-CAPS lines into one title
+        title_parts = [caps_lines[0][1]]
+        for j in range(1, len(caps_lines)):
+            if caps_lines[j][0] == caps_lines[j-1][0] + 1:
+                title_parts.append(caps_lines[j][1])
+            else:
+                break
+        title = " ".join(title_parts)
+    else:
+        # Fall back to longest meaningful line
+        title = max(meaningful, key=lambda x: len(x[1]))[1]
 
     return {"title": title, "author": author}
 
@@ -1576,10 +1824,170 @@ def extract_title_author_from_cover(ocr_text: str) -> dict:
 # BARCODE DETECTION
 # ========================================
 
-def detect_barcode_isbn(image: Image.Image) -> Optional[str]:
+def _fuzzy_normalize_isbn_text(text: str) -> str:
     """
-    Detect a barcode (EAN-13 / ISBN) in the image using pyzbar.
-    Returns the ISBN string if found, or None.
+    Fix common OCR misreads in ISBN label text.
+
+    Tesseract confuses visually similar characters:
+      • 1SBN / ISBM / I5BN → ISBN  (misread of the keyword itself)
+      • O (letter) → 0  in digit positions
+      • l / I       → 1  in digit positions
+      • S           → 5  in digit positions
+    Only the digit portion is corrected (after "ISBN") to avoid
+    corrupting legitimate Cyrillic text that may appear nearby.
+    """
+    # Fix the ISBN keyword itself
+    text = re.sub(r'\b[I1l][S5][B8][NМMм№Н]\b', 'ISBN', text, flags=re.IGNORECASE)
+
+    # Fix digit string that follows ISBN (separated by optional non-digits)
+    def _fix_digits(m: re.Match) -> str:
+        s = m.group(0)
+        s = s.replace('O', '0').replace('o', '0')
+        s = s.replace('I', '1').replace('l', '1')
+        s = s.replace('S', '5')
+        s = s.replace('B', '8')
+        return s
+
+    text = re.sub(
+        r'(?<=ISBN)[^A-Za-zА-Яа-я\n]{0,5}[0-9OoIlSBXx\-]{9,17}',
+        _fix_digits, text
+    )
+    return text
+
+
+def _ocr_strip_for_isbn(strip: Image.Image) -> Optional[str]:
+    """
+    OCR a small text strip expected to contain an ISBN label.
+
+    Tries multiple image variants (normal/inverted) and Tesseract configs
+    in order of decreasing reliability.  No aggressive preprocessing —
+    Otsu binarize only, to avoid destroying fragile label text.
+
+    Why no aggressive preprocessing:
+      Adaptive thresholding with a large block destroys thin characters in
+      narrow strips.  CLAHE can invert small-text regions.  Simple Otsu +
+      optional 3× upscale is sufficient for typical barcode label text.
+    """
+    import numpy as np
+    from PIL import ImageOps
+
+    # Build variants: upscaled Otsu, raw greyscale, inverted Otsu
+    scale = 3
+    big = strip.resize((strip.width * scale, strip.height * scale), Image.LANCZOS)
+    variants = [
+        _binarize(big),                           # upscaled Otsu binarized
+        big.convert('L'),                          # raw greyscale
+        ImageOps.invert(_binarize(big)),           # inverted (white-on-dark labels)
+    ]
+
+    # PSM 11 (sparse text): best for mixed barcode + label images.
+    # PSM 6 (uniform block): for clean multi-line label text.
+    # PSM 7 (single line): for a pure single-line strip.
+    configs = ['--psm 11', '--psm 6', '--psm 7']
+
+    for img_variant in variants:
+        for config in configs:
+            raw = pytesseract.image_to_string(img_variant, lang='eng', config=config).strip()
+            if not raw:
+                continue
+            normalized = _fuzzy_normalize_isbn_text(raw)
+            logger.info("_ocr_strip_for_isbn %s raw=%r normalized=%r",
+                        config, raw[:80], normalized[:80])
+            m = _ISBN.search(normalized)
+            if m:
+                isbn = _clean_isbn(m.group(1))
+                if isbn and isbn != 'unknown':
+                    return isbn
+
+    return None
+
+
+def _ocr_isbn_from_barcode_image(image: Image.Image) -> Optional[str]:
+    """
+    Extract the printed ISBN text from a barcode image.
+
+    Why OCR on the full image fails:
+      Barcode stripes are high-contrast vertical noise that confuses Tesseract's
+      line segmentation.  The ISBN text (e.g. "ISBN 0-345-27760-0") is printed
+      in a narrow label strip ABOVE the barcode stripes and is unrelated to the
+      barcode's encoded value.  By locating the barcode rectangle with pyzbar and
+      cropping only the strip above it, we give Tesseract clean label text without
+      any barcode interference.
+
+    Algorithm:
+      1. Decode barcodes with pyzbar to get the bounding rectangle.
+      2. Crop the region above the barcode (height = barcode_height * 0.5,
+         padded left/right by 5% of image width to catch label edges).
+      3. OCR that strip with aggressive preprocessing + restricted charset.
+      4. Fallback: if pyzbar finds no barcodes (pyzbar not installed, blurry
+         image), OCR the top 40% of the image.
+    """
+    try:
+        from pyzbar.pyzbar import decode as pyzbar_decode
+        import numpy as np
+
+        arr = np.array(image.convert('RGB'))
+        barcodes = pyzbar_decode(arr)
+
+        if barcodes:
+            # Use the topmost barcode (ISBN label is above the first barcode)
+            topmost = min(barcodes, key=lambda b: b.rect.top)
+            rect = topmost.rect
+            img_w, img_h = image.size
+
+            y1  = max(0, rect.top - 2)
+            x0  = max(0, rect.left - int(img_w * 0.05))
+            x1  = min(img_w, rect.left + rect.width + int(img_w * 0.05))
+
+            # Strategy A: area above the barcode, full image width.
+            # Use the LARGER of (barcode top) and (40% of image height) as the
+            # bottom boundary — the ISBN label may extend below rect.top if the
+            # pyzbar bounding box starts at the very top of the label text.
+            above_bottom = max(y1, image.height * 2 // 5)
+            if above_bottom > 0:
+                above_all = image.crop((0, 0, image.width, above_bottom))
+                logger.info("Barcode bbox top=%d — OCR-ing y=0–%d full width",
+                            rect.top, above_bottom)
+                isbn = _ocr_strip_for_isbn(above_all)
+                if isbn:
+                    logger.info("ISBN extracted from area above barcode: %s", isbn)
+                    return isbn
+
+            # Strategy B: narrow strips immediately above the stripes (tighter context).
+            for strip_h in (30, 60, 120):
+                y0 = max(0, y1 - strip_h)
+                if y1 <= y0 or x1 <= x0:
+                    continue
+                label_strip = image.crop((x0, y0, x1, y1))
+                logger.info("Trying narrow strip h=%d y=%d–%d", strip_h, y0, y1)
+                isbn = _ocr_strip_for_isbn(label_strip)
+                if isbn:
+                    logger.info("ISBN extracted from narrow strip (h=%d): %s", strip_h, isbn)
+                    return isbn
+
+            return None  # barcode found but ISBN not in any region above it
+
+        # Fallback: no barcode detected — OCR the top 40% of the image
+        logger.info("No barcode bbox — OCR-ing top 40%% of barcode image")
+        top = image.crop((0, 0, image.width, max(40, image.height * 2 // 5)))
+        return _ocr_strip_for_isbn(top)
+
+    except ImportError:
+        logger.warning("pyzbar not installed — using top-40%% OCR fallback")
+        top = image.crop((0, 0, image.width, max(40, image.height * 2 // 5)))
+        return _ocr_strip_for_isbn(top)
+    except Exception as e:
+        logger.warning("_ocr_isbn_from_barcode_image failed: %s", e)
+        return None
+
+
+def detect_barcode_isbn(image: Image.Image) -> tuple[Optional[str], Optional[str]]:
+    """
+    Detect a barcode in the image using pyzbar.
+    Returns (raw_barcode_value, isbn_or_none).
+    - raw_barcode_value: the decoded digits, stored for display regardless of type.
+    - isbn_or_none: the value if it is a valid ISBN (ISBN-13 starting with 978/979,
+      or a 10-digit ISBN-10); None otherwise (e.g. UPC-A barcodes).
     """
     try:
         from pyzbar.pyzbar import decode as pyzbar_decode
@@ -1588,25 +1996,49 @@ def detect_barcode_isbn(image: Image.Image) -> Optional[str]:
         img_array = np.array(image.convert("RGB"))
         barcodes = pyzbar_decode(img_array)
 
+        barcode_raw_value = None  # best raw value seen (returned for display)
+
         for barcode in barcodes:
             raw = barcode.data.decode("utf-8", errors="ignore").strip()
-            # Accept EAN-13 (ISBN-13) and EAN-8 / Code128 that look like ISBNs
             digits = re.sub(r"[^0-9X]", "", raw.upper())
-            if len(digits) in (10, 13):
-                logger.info("Barcode detected: type=%s data=%s", barcode.type, raw)
-                return digits
-            # Some scanners return ISBN: prefix
-            if raw.upper().startswith("ISBN"):
+
+            logger.info("Barcode detected: type=%s raw=%s digits=%s", barcode.type, raw, digits)
+
+            if len(digits) == 13:
+                if digits.startswith("978") or digits.startswith("979"):
+                    logger.info("Barcode is ISBN-13: %s", digits)
+                    return digits, digits          # definitive ISBN-13 — done
+                else:
+                    # UPC-A or other EAN-13: record raw value but keep looking
+                    logger.info("Barcode is non-ISBN EAN-13 (UPC): %s", digits)
+                    barcode_raw_value = digits     # fall through to OCR text check
+
+            elif len(digits) == 10:
+                logger.info("Barcode is ISBN-10: %s", digits)
+                return digits, digits              # definitive ISBN-10 — done
+
+            elif raw.upper().startswith("ISBN"):
                 clean = re.sub(r"[^0-9X]", "", raw.upper())
                 if len(clean) in (10, 13):
                     logger.info("Barcode detected (ISBN prefix): %s", clean)
-                    return clean
+                    return clean, clean
 
-        return None
+        # No valid ISBN barcode found.  Try reading the printed ISBN text —
+        # old books printed "ISBN 0-345-27760-0" in human-readable text above
+        # a UPC-A retail barcode.  pyzbar reads the symbol, not the text.
+        ocr_isbn = _ocr_isbn_from_barcode_image(image)
+        if ocr_isbn:
+            logger.info("ISBN read from printed text on barcode image: %s", ocr_isbn)
+            return barcode_raw_value or ocr_isbn, ocr_isbn
+
+        return barcode_raw_value, None
 
     except ImportError:
         logger.warning("pyzbar not installed — barcode detection skipped")
-        return None
+        ocr_isbn = _ocr_isbn_from_barcode_image(image)
+        if ocr_isbn:
+            return ocr_isbn, ocr_isbn
+        return None, None
     except Exception as e:
         logger.warning("Barcode detection failed: %s", e)
-        return None
+        return None, None

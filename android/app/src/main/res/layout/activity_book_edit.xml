@@ -4,34 +4,128 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F5F5"
+    android:background="@color/colorBackground"
     tools:context=".BookEditActivity">
 
-    <!-- Shelf Selection -->
+    <!-- Hidden shelf spinner — kept for code compatibility, managed programmatically -->
+    <Spinner
+        android:id="@+id/shelfSpinner"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Top action bar: Back · Delete · Send -->
     <LinearLayout
-        android:id="@+id/shelfSelectionLayout"
+        android:id="@+id/topActionBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="16dp"
-        android:background="@android:color/white"
+        android:layout_height="64dp"
+        android:background="@color/colorTopBar"
+        android:elevation="4dp"
         android:gravity="center_vertical"
+        android:orientation="horizontal"
         app:layout_constraintTop_toTopOf="parent">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Shelf:"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginEnd="12dp" />
-
-        <Spinner
-            android:id="@+id/shelfSpinner"
+        <!-- Back -->
+        <LinearLayout
+            android:id="@+id/backButton"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_weight="1"
-            android:minHeight="48dp" />
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Go back"
+                android:src="@drawable/ic_back"
+                app:tint="#424242" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Back"
+                android:textColor="#424242"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="32dp"
+            android:background="#E0E0E0" />
+
+        <!-- Delete -->
+        <LinearLayout
+            android:id="@+id/deleteBookButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Delete book"
+                android:src="@drawable/ic_delete"
+                app:tint="@color/colorDelete" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Delete"
+                android:textColor="@color/colorDelete"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Divider -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="32dp"
+            android:background="#E0E0E0" />
+
+        <!-- Send -->
+        <LinearLayout
+            android:id="@+id/sendButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="Send book"
+                android:src="@drawable/ic_send"
+                app:tint="@color/colorSend" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Send"
+                android:textColor="@color/colorSend"
+                android:textSize="11sp" />
+        </LinearLayout>
 
     </LinearLayout>
 
@@ -42,120 +136,169 @@
         android:layout_height="0dp"
         android:clipToPadding="false"
         android:padding="16dp"
-        app:layout_constraintBottom_toTopOf="@+id/bottomActionBar"
-        app:layout_constraintTop_toBottomOf="@+id/shelfSelectionLayout"
+        app:layout_constraintBottom_toTopOf="@+id/bottomScanBar"
+        app:layout_constraintTop_toBottomOf="@+id/topActionBar"
         tools:listitem="@layout/item_page" />
 
-    <!-- Delete Book Button -->
-    <ImageButton
-        android:id="@+id/deleteBookButton"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_margin="16dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="Delete book"
-        android:src="@drawable/ic_delete"
-        app:tint="#D32F2F"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
-    <!-- Bottom Action Bar -->
+    <!-- Bottom scan buttons bar -->
     <LinearLayout
-        android:id="@+id/bottomActionBar"
+        android:id="@+id/bottomScanBar"
         android:layout_width="match_parent"
         android:layout_height="72dp"
-        android:background="@android:color/white"
+        android:background="@color/colorSurface"
         android:elevation="8dp"
-        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="8dp"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- Back Button (always visible on the left) -->
-        <ImageButton
-            android:id="@+id/backButton"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginHorizontal="4dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Go back"
-            android:src="@drawable/ic_back" />
-
-        <!-- Scrollable add-page buttons -->
-        <HorizontalScrollView
+        <!-- Cover -->
+        <LinearLayout
+            android:id="@+id/addCoverButton"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:scrollbars="none">
+            android:background="@color/colorCover"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
 
-            <LinearLayout
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Add cover"
+                android:src="@drawable/ic_add_cover"
+                app:tint="@android:color/white" />
+
+            <TextView
                 android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="cover"
+                android:textColor="@android:color/white"
+                android:textSize="10sp" />
+        </LinearLayout>
 
-                <!-- Add Cover Button -->
-                <ImageButton
-                    android:id="@+id/addCoverButton"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Add cover"
-                    android:src="@drawable/ic_add_cover" />
+        <!-- Title -->
+        <LinearLayout
+            android:id="@+id/addTitlePageButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@color/colorTitle"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
 
-                <!-- Add Title Page Button -->
-                <ImageButton
-                    android:id="@+id/addTitlePageButton"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Add title page"
-                    android:src="@drawable/ic_add_title" />
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Add title page"
+                android:src="@drawable/ic_add_title"
+                app:tint="@android:color/white" />
 
-                <!-- Add Info Page Button -->
-                <ImageButton
-                    android:id="@+id/addInfoButton"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Add info page"
-                    android:src="@drawable/ic_add_info" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="title"
+                android:textColor="@android:color/white"
+                android:textSize="10sp" />
+        </LinearLayout>
 
-                <!-- Add Other Page Button -->
-                <ImageButton
-                    android:id="@+id/addPageButton"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Add page"
-                    android:src="@drawable/ic_add_page" />
+        <!-- Info -->
+        <LinearLayout
+            android:id="@+id/addInfoButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@color/colorInfo"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
 
-                <!-- Add Barcode Button -->
-                <ImageButton
-                    android:id="@+id/addBarcodeButton"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginHorizontal="4dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Add barcode"
-                    android:src="@drawable/ic_add_barcode" />
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Add info page"
+                android:src="@drawable/ic_add_info"
+                app:tint="@android:color/white" />
 
-            </LinearLayout>
-        </HorizontalScrollView>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="info"
+                android:textColor="@android:color/white"
+                android:textSize="10sp" />
+        </LinearLayout>
 
-        <!-- Send Button (always visible on the right) -->
-        <ImageButton
-            android:id="@+id/sendButton"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginHorizontal="4dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Send book"
-            android:src="@drawable/ic_send" />
+        <!-- Page -->
+        <LinearLayout
+            android:id="@+id/addPageButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@color/colorPage"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Add page"
+                android:src="@drawable/ic_add_page"
+                app:tint="#212121" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="page"
+                android:textColor="#212121"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Barcode -->
+        <LinearLayout
+            android:id="@+id/addBarcodeButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@color/colorBarcode"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Add barcode"
+                android:src="@drawable/ic_add_barcode"
+                app:tint="#424242" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="barcode"
+                android:textColor="#424242"
+                android:textSize="10sp" />
+        </LinearLayout>
 
     </LinearLayout>
 

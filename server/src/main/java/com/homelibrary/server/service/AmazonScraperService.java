@@ -161,23 +161,45 @@ public class AmazonScraperService implements IsbnLookupService {
     }
 
     /**
-     * Parses the book description/editorial review.
-     * Amazon uses two common selectors:
-     *   - #bookDescription_feature_div noscript  (clean text, no JS required)
-     *   - #productDescription p                  (older layout)
+     * Parses the book description. Amazon uses several layouts depending on book age:
+     *   1. #bookDescription_feature_div noscript       — modern (JS-expanded), raw text in noscript
+     *   2. #bookDescription_feature_div span           — inner span when noscript is empty
+     *   3. #productDescription p                       — older product layout
+     *   4. #editorial-reviews_feature_div .a-section p — editorial reviews section
+     *   5. #aplus_feature_div, #dpx-aplus-product-description_feature_div — A+ content
      */
     private void parseDescription(Document doc, BookMetadataDto dto) {
-        // Modern layout: noscript inside bookDescription_feature_div
+        // 1. Modern: noscript tag inside book description div
         Element noscript = doc.selectFirst("#bookDescription_feature_div noscript");
         if (noscript != null) {
             String desc = noscript.text().trim();
             if (!desc.isEmpty()) { dto.setDescription(desc); return; }
         }
-        // Older layout
+        // 2. Inner span (some pages omit noscript but have a span with the text)
+        Element span = doc.selectFirst("#bookDescription_feature_div span");
+        if (span != null) {
+            String desc = span.text().trim();
+            if (desc.length() > 50) { dto.setDescription(desc); return; }
+        }
+        // 3. Older product description section
         Element p = doc.selectFirst("#productDescription p");
         if (p != null) {
             String desc = p.text().trim();
-            if (!desc.isEmpty()) dto.setDescription(desc);
+            if (!desc.isEmpty()) { dto.setDescription(desc); return; }
+        }
+        // 4. Editorial reviews section (common on pre-2010 books)
+        for (Element section : doc.select(
+                "#editorial-reviews_feature_div .a-section p, " +
+                "#editorialReviews_feature_div .a-section p")) {
+            String desc = section.text().trim();
+            if (desc.length() > 50) { dto.setDescription(desc); return; }
+        }
+        // 5. A+ content description
+        Element aplus = doc.selectFirst(
+                "#aplus_feature_div, #dpx-aplus-product-description_feature_div");
+        if (aplus != null) {
+            String desc = aplus.text().trim();
+            if (desc.length() > 50) dto.setDescription(desc);
         }
     }
 

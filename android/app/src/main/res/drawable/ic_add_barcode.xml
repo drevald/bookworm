@@ -1,15 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="56dp"
-    android:height="56dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Orange barcode icon -->
-    <path
-        android:fillColor="#FF9800"
-        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z"/>
-    <!-- Barcode bars -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M6,8h1v8H6zM8,8h2v8H8zM11,8h1v8h-1zM13,8h2v8h-2zM16,8h1v8h-1zM18,8h1v8h-1z"/>
+    android:width="64dp"
+    android:height="73dp"
+    android:viewportWidth="64"
+    android:viewportHeight="73">
+    <group android:translateX="-310" android:translateY="-2">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M323,8 L358,8 Q371,8 371,21 L371,62 Q371,75 358,75 L323,75 Q310,75 310,62 L310,21 Q310,8 323,8 Z"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M326,61 L326,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M332,61 L332,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M335,61 L335,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M338,61 L338,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M341,61 L341,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M344,61 L344,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M349,61 L349,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M352,61 L352,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#5C5C5C" android:strokeWidth="2"
+            android:pathData="M355,61 L355,68"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="4"
+            android:pathData="M323,10 L358,10 Q369,10 369,21 L369,62 Q369,73 358,73 L323,73 Q312,73 312,62 L312,21 Q312,10 323,10 Z"/>
+        <path android:fillColor="#FFFFFF" android:strokeColor="#666462" android:strokeWidth="4"
+            android:pathData="M364.5,2 C369.831,2 374,6.1123 374,11 C374,15.8877 369.831,20 364.5,20 C359.169,20 355,15.8877 355,11 C355,6.1123 359.169,2 364.5,2 Z"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="4"
+            android:pathData="M365,6 L365,16"/>
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="4"
+            android:pathData="M370,11 L360,11"/>
+    </group>
 </vector>

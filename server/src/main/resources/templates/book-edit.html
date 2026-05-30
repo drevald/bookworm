@@ -1,92 +1,109 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title th:text="'Edit ' + ${book.title} + ' - Home Library'">Edit Book - Home Library</title>
-    <link rel="stylesheet" th:href="@{/css/style.css}">
+    <link rel="stylesheet" th:href="@{/webjars/bootstrap/css/bootstrap.min.css}">
+    <link rel="stylesheet" th:href="@{/css/custom.css}">
 </head>
+<body class="bg-light">
+<div class="container py-4" style="max-width:720px;">
 
-<body>
-    <div class="container">
-        <header>
-            <h1>📚 Home Library</h1>
-            <p class="subtitle">Edit Book Metadata</p>
-        </header>
+    <header class="text-center py-3 mb-4 border-bottom">
+        <h1 class="text-primary fw-bold">📚 Home Library</h1>
+        <p class="text-muted mb-0">Edit Book Metadata</p>
+    </header>
 
-        <main>
-            <div class="edit-container">
-                <div class="edit-header">
-                    <h2>Edit Book Information</h2>
-                    <a th:href="@{/books/{id}(id=${book.id})}" class="btn-secondary">Cancel</a>
+    <main>
+        <div class="bg-white rounded-3 shadow-sm p-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="h5 fw-semibold mb-0">Edit Book Information</h2>
+                <a th:href="@{/books/{id}(id=${book.id})}" class="btn btn-outline-secondary btn-sm">Cancel</a>
+            </div>
+
+            <form th:action="@{/books/{id}/edit(id=${book.id})}" method="post">
+
+                <div class="mb-3">
+                    <label for="title" class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+                    <input type="text" id="title" name="title" class="form-control"
+                           th:value="${book.title}" required placeholder="Book title">
                 </div>
 
-                <form th:action="@{/books/{id}/edit(id=${book.id})}" method="post" class="edit-form">
-                    <div class="form-group">
-                        <label for="title">Title <span class="required">*</span></label>
-                        <input type="text" id="title" name="title" 
-                               th:value="${book.title}" 
-                               required
-                               placeholder="Book title">
-                    </div>
+                <div class="mb-3">
+                    <label for="author" class="form-label fw-semibold">Author(s)</label>
+                    <input type="text" id="author" name="author" class="form-control"
+                           th:value="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'unknown'}"
+                           placeholder="Author names (comma-separated)">
+                    <div class="form-text">Separate multiple authors with commas</div>
+                </div>
 
-                    <div class="form-group">
-                        <label for="author">Author(s)</label>
-                        <input type="text" id="author" name="author" 
-                               th:value="${!book.authors.empty ? #strings.listJoin(book.authors.![name], ', ') : 'unknown'}"
-                               placeholder="Author names (comma-separated)">
-                        <small>Separate multiple authors with commas</small>
-                    </div>
+                <div class="mb-3">
+                    <label for="publisher" class="form-label fw-semibold">Publisher</label>
+                    <input type="text" id="publisher" name="publisher" class="form-control"
+                           th:value="${book.publisher != null ? book.publisher : 'unknown'}"
+                           placeholder="Publisher name">
+                </div>
 
-                    <div class="form-group">
-                        <label for="publisher">Publisher</label>
-                        <input type="text" id="publisher" name="publisher" 
-                               th:value="${book.publisher != null ? book.publisher : 'unknown'}"
-                               placeholder="Publisher name">
-                    </div>
+                <div class="mb-3">
+                    <label for="year" class="form-label fw-semibold">Publication Year</label>
+                    <input type="number" id="year" name="year" class="form-control"
+                           th:value="${book.publicationYear}"
+                           min="1000" max="2100" placeholder="YYYY">
+                </div>
 
-                    <div class="form-group">
-                        <label for="year">Publication Year</label>
-                        <input type="number" id="year" name="year" 
-                               th:value="${book.publicationYear}"
-                               min="1000" max="2100"
-                               placeholder="YYYY">
-                    </div>
+                <div class="mb-3">
+                    <label for="isbn" class="form-label fw-semibold">ISBN</label>
+                    <input type="text" id="isbn" name="isbn" class="form-control"
+                           th:value="${book.isbn != null ? book.isbn : 'unknown'}"
+                           placeholder="ISBN-10 or ISBN-13">
+                </div>
 
-                    <div class="form-group">
-                        <label for="isbn">ISBN</label>
-                        <input type="text" id="isbn" name="isbn" 
-                               th:value="${book.isbn != null ? book.isbn : 'unknown'}"
-                               placeholder="ISBN-10 or ISBN-13">
-                    </div>
+                <div class="mb-3">
+                    <label for="udk" class="form-label fw-semibold">UDK</label>
+                    <input type="text" id="udk" name="udk" class="form-control"
+                           th:value="${book.udk != null ? book.udk : 'unknown'}"
+                           placeholder="УДК code">
+                </div>
 
-                    <div class="form-group">
-                        <label for="udk">UDK</label>
-                        <input type="text" id="udk" name="udk" 
-                               th:value="${book.udk != null ? book.udk : 'unknown'}"
-                               placeholder="УДК code">
-                    </div>
+                <div class="mb-3">
+                    <label for="bbk" class="form-label fw-semibold">BBK</label>
+                    <input type="text" id="bbk" name="bbk" class="form-control"
+                           th:value="${book.bbk != null ? book.bbk : 'unknown'}"
+                           placeholder="ББК code">
+                </div>
 
-                    <div class="form-group">
-                        <label for="bbk">BBK</label>
-                        <input type="text" id="bbk" name="bbk" 
-                               th:value="${book.bbk != null ? book.bbk : 'unknown'}"
-                               placeholder="ББК code">
-                    </div>
+                <div class="mb-3">
+                    <label for="language" class="form-label fw-semibold">Language</label>
+                    <select id="language" name="language" class="form-select">
+                        <option value="" th:selected="${book.language == null}">— not set —</option>
+                        <option value="rus" th:selected="${book.language == 'rus'}">Russian (rus)</option>
+                        <option value="eng" th:selected="${book.language == 'eng'}">English (eng)</option>
+                        <option value="rus+eng" th:selected="${book.language == 'rus+eng'}">Russian + English (rus+eng)</option>
+                    </select>
+                </div>
 
-                    <div class="form-actions">
-                        <button type="submit" class="btn-primary">Save Changes</button>
-                        <a th:href="@{/books/{id}(id=${book.id})}" class="btn-secondary">Cancel</a>
-                    </div>
-                </form>
-            </div>
-        </main>
+                <div class="mb-4">
+                    <label for="annotation" class="form-label fw-semibold">Annotation</label>
+                    <textarea id="annotation" name="annotation" class="form-control" rows="6"
+                              placeholder="Book description or annotation"
+                              th:text="${book.annotation}"></textarea>
+                </div>
 
-        <footer>
-            <p>Bookworm - Home Library System</p>
-        </footer>
-    </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <a th:href="@{/books/{id}(id=${book.id})}" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+
+            </form>
+        </div>
+    </main>
+
+    <footer class="text-center text-muted py-4 mt-4 border-top small">
+        Bookworm - Home Library System
+    </footer>
+</div>
+
+<script th:src="@{/webjars/bootstrap/js/bootstrap.bundle.min.js}"></script>
 </body>
-
 </html>

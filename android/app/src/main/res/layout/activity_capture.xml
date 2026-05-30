@@ -4,6 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#000000"
     tools:context=".CaptureActivity">
 
     <androidx.camera.view.PreviewView
@@ -11,26 +12,52 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Page type label — top right -->
     <TextView
         android:id="@+id/instructionText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="32dp"
-        android:background="#80000000"
-        android:padding="8dp"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="#CC000000"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
         android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        app:layout_constraintBottom_toTopOf="@+id/captureButton"
+        android:textSize="14sp"
+        android:textAllCaps="true"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        tools:text="Take photo of COVER" />
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="COVER" />
 
-    <Button
-        android:id="@+id/captureButton"
+    <!-- Capture tips — shown only for INFO_PAGE -->
+    <TextView
+        android:id="@+id/captureHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="64dp"
-        android:text="Capture"
+        android:layout_marginBottom="16dp"
+        android:background="#CC000000"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:lineSpacingExtra="4dp"
+        android:text="• Page fills the frame\n• Hold parallel to page\n• Press firmly, hold still\n• Good light, no shadows"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/captureButton"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Circular capture button -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/captureButton"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginBottom="48dp"
+        android:contentDescription="Capture photo"
+        android:src="@android:drawable/ic_menu_camera"
+        app:backgroundTint="#FFFFFF"
+        app:tint="#000000"
+        app:fabSize="normal"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />

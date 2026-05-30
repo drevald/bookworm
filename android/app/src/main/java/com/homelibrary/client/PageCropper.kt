@@ -20,6 +20,24 @@ import kotlin.math.sqrt
 object PageCropper {
 
     /**
+     * Crops the axis-aligned bounding rectangle of [pts] from [src], then applies
+     * white-point balance.  No perspective warp — original pixels are preserved,
+     * which is important for OCR pages where interpolation degrades readability.
+     */
+    fun cropAndBalance(src: Bitmap, pts: Array<PointF>): Bitmap {
+        val left   = pts.minOf { it.x }.coerceIn(0f, src.width.toFloat()).toInt()
+        val top    = pts.minOf { it.y }.coerceIn(0f, src.height.toFloat()).toInt()
+        val right  = pts.maxOf { it.x }.coerceIn(0f, src.width.toFloat()).toInt()
+        val bottom = pts.maxOf { it.y }.coerceIn(0f, src.height.toFloat()).toInt()
+        val w = (right - left).coerceAtLeast(1)
+        val h = (bottom - top).coerceAtLeast(1)
+        val cropped = Bitmap.createBitmap(src, left, top, w, h)
+        val balanced = applyWhiteBalance(cropped)
+        if (cropped !== balanced) cropped.recycle()
+        return balanced
+    }
+
+    /**
      * Warps [src] so that the quadrilateral [pts] ([TL, TR, BR, BL] in bitmap
      * pixel coordinates) becomes a straight rectangle, then applies white-point
      * balance (95th-percentile per channel → 255).

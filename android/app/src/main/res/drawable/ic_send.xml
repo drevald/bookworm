@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="56dp"
-    android:height="56dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Blue send icon -->
-    <path
-        android:fillColor="#2196F3"
-        android:pathData="M2,21l21,-9L2,3v7l15,2 -15,2v7z"/>
+    android:width="61dp"
+    android:height="67dp"
+    android:viewportWidth="61"
+    android:viewportHeight="67">
+    <group android:translateX="-307" android:translateY="-2">
+        <path android:fillColor="#00000000" android:strokeColor="#666462" android:strokeWidth="4"
+            android:pathData="M318,2 L353,2 Q364,2 364,13 L364,54 Q364,65 353,65 L318,65 Q307,65 307,54 L307,13 Q307,2 318,2 Z"/>
+        <path android:fillColor="#00EEFF" android:strokeColor="#666462" android:strokeWidth="2"
+            android:pathData="M353.431,30.4545 H326.937 C326.559,30.4545 326.214,30.2422 326.044,29.9054 L318.272,14.5192 C317.848,13.6783 318.715,12.7702 319.575,13.1561 L353.84,28.5423 C354.824,28.9839 354.509,30.4545 353.431,30.4545 Z"/>
+        <path android:fillColor="#00EEFF" android:strokeColor="#666462" android:strokeWidth="2"
+            android:pathData="M353.089,33.7727 H326.986 C326.633,33.7727 326.307,33.9583 326.127,34.2612 L318.47,47.1219 C317.985,47.9363 318.8,48.9054 319.685,48.568 L353.445,35.7072 C354.482,35.3119 354.199,33.7727 353.089,33.7727 Z"/>
+    </group>
 </vector>

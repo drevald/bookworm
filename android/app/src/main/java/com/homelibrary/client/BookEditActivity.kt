@@ -54,6 +54,7 @@ class BookEditActivity : AppCompatActivity() {
                 autoCropResult.launch(Intent(this, CropActivity::class.java).apply {
                     putExtra(CropActivity.EXTRA_IMAGE_PATH, imagePath)
                     putExtra(CropActivity.EXTRA_PAGE_ID, -1L)
+                    putExtra(CropActivity.EXTRA_PAGE_TYPE, pageType.name)
                 })
             }
         }
@@ -162,6 +163,7 @@ class BookEditActivity : AppCompatActivity() {
         val intent = Intent(this, CropActivity::class.java).apply {
             putExtra(CropActivity.EXTRA_IMAGE_PATH, page.imagePath)
             putExtra(CropActivity.EXTRA_PAGE_ID, page.id)
+            putExtra(CropActivity.EXTRA_PAGE_TYPE, page.type.name)
         }
         cropResult.launch(intent)
     }
